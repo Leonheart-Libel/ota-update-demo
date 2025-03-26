@@ -34,14 +34,72 @@ class VersionManager:
         os.makedirs(app_dir, exist_ok=True)
         os.makedirs(versions_dir, exist_ok=True)
         
+        # Ensure the directory for the current version file exists
+        os.makedirs(os.path.dirname(current_version_file), exist_ok=True)
+        
         # Initialize current version file if it doesn't exist
         if not os.path.exists(current_version_file):
-            self._save_version_info({
+            # Try to create the file with full permissions
+            try:
+                initial_version_info = {
+                    "version": "0.0.0",
+                    "commit": None,
+                    "install_date": datetime.now().isoformat(),
+                    "history": []
+                }
+                
+                # Create the file with full read/write permissions
+                with open(current_version_file, 'w') as f:
+                    json.dump(initial_version_info, f, indent=2)
+                
+                # Set permissions to be readable and writable by the owner
+                os.chmod(current_version_file, 0o666)
+                
+                logger.info(f"Created initial version file: {current_version_file}")
+            except Exception as e:
+                logger.error(f"Critical error creating version file: {e}")
+                raise
+    
+    def get_current_version(self):
+        """Get the current version information."""
+        try:
+            with open(self.current_version_file, 'r') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logger.error(f"Error reading current version: {e}")
+            return {
                 "version": "0.0.0",
                 "commit": None,
                 "install_date": datetime.now().isoformat(),
                 "history": []
-            })
+            }
+    
+    def _save_version_info(self, version_info):
+        """Save version information to the current version file."""
+        try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(self.current_version_file), exist_ok=True)
+            
+            with open(self.current_version_file, 'w') as f:
+                json.dump(version_info, f, indent=2)
+            
+            # Set permissions to be readable and writable
+            os.chmod(self.current_version_file, 0o666)
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error saving version info: {e}")
+            
+            # Log additional context about file permissions and directory
+            try:
+                dir_path = os.path.dirname(self.current_version_file)
+                logger.info(f"Directory path: {dir_path}")
+                logger.info(f"Directory exists: {os.path.exists(dir_path)}")
+                logger.info(f"Directory permissions: {oct(os.stat(dir_path).st_mode)[-3:]}")
+            except Exception as context_err:
+                logger.error(f"Error getting directory context: {context_err}")
+            
+            return False
     
     def get_current_version(self):
         """Get the current version information."""
