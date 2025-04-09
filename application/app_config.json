@@ -1,7 +1,0 @@
-{
-  "storage": {
-    "type": "file",
-    "path": "data.log"
-  },
-  "generate_interval_seconds": 5
-}
