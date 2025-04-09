@@ -1,0 +1,10 @@
+{
+    "github_token": "YOUR_GITHUB_TOKEN",
+    "repo_owner": "YOUR_GITHUB_USERNAME",
+    "repo_name": "ota-update-demo",
+    "app_dir": "application",
+    "db_path": "data/app.db",
+    "versions_dir": "versions",
+    "max_versions": 5,
+    "check_interval": 300
+}

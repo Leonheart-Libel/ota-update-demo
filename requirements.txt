@@ -1,0 +1,2 @@
+requests>=2.25.0
+# Add any other dependencies required by your application
