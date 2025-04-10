@@ -22,14 +22,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger("TestApp")
 
-# App version - this will change with updates
+
 # App version - read from version file
-try:
-    with open("application/version.txt", "r") as f:
-        APP_VERSION = f.read().strip()
-except Exception as e:
-    logger.warning(f"Error reading version file: {str(e)}")
-    APP_VERSION = "1.0.0"  # Default fallback version
+version_files = [
+    "application/version.txt",  # Path relative to project root
+    "version.txt",              # Path relative to current directory
+    "../application/version.txt"  # Another possible path
+]
+
+APP_VERSION = "1.0.0"  # Default fallback version
+for version_file in version_files:
+    try:
+        if os.path.exists(version_file):
+            with open(version_file, "r") as f:
+                version = f.read().strip()
+                if version:  # Only use if not empty
+                    APP_VERSION = version
+                    logger.info(f"Loaded version {APP_VERSION} from {version_file}")
+                    break
+    except Exception as e:
+        logger.warning(f"Error reading version file {version_file}: {str(e)}")
+
+logger.info(f"Current working directory: {os.getcwd()}")
+logger.info(f"Using application version: {APP_VERSION}")
 
 class TestApplication:
     def __init__(self, db_path="data/app.db"):

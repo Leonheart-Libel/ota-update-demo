@@ -74,9 +74,10 @@ class VersionManager:
             os.makedirs(version_dir, exist_ok=True)
             
             # Copy Python files from app directory to version directory
-            for py_file in glob.glob(os.path.join(app_dir, "*.py")):
-                file_name = os.path.basename(py_file)
-                shutil.copy2(py_file, os.path.join(version_dir, file_name))
+            for file_pattern in ["*.py", "*.txt"]:
+                for app_file in glob.glob(os.path.join(app_dir, file_pattern)):
+                    file_name = os.path.basename(app_file)
+                    shutil.copy2(app_file, os.path.join(version_dir, file_name))
             
             logger.info(f"Backed up version {current_version}")
             return True
@@ -93,9 +94,10 @@ class VersionManager:
             os.makedirs(version_dir, exist_ok=True)
             
             # Copy Python files from app directory to version directory
-            for py_file in glob.glob(os.path.join(app_dir, "*.py")):
-                file_name = os.path.basename(py_file)
-                shutil.copy2(py_file, os.path.join(version_dir, file_name))
+            for file_pattern in ["*.py", "*.txt"]:
+                for app_file in glob.glob(os.path.join(app_dir, file_pattern)):
+                    file_name = os.path.basename(app_file)
+                    shutil.copy2(app_file, os.path.join(version_dir, file_name))
             
             # Set as current version
             self.set_current_version(version)

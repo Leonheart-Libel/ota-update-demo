@@ -147,7 +147,7 @@ class OTAUpdater:
                 self.version_manager.backup_current_version(self.app_dir)
             
             # Copy new version to application directory
-            app_files = [f for f in os.listdir(version_dir) if f.endswith(".py")]
+            app_files = [f for f in os.listdir(version_dir) if f.endswith((".py", ".txt"))]
             for file in app_files:
                 shutil.copy2(
                     os.path.join(version_dir, file),
