@@ -125,7 +125,7 @@ class GitHubClient:
             
             # Download each Python file
             for item in contents:
-                if item["type"] == "file" and item["name"].endswith(".py"):
+                if item["type"] == "file" and (item["name"].endswith(".py") or item["name"].endswith(".txt")):
                     file_url = item["download_url"]
                     file_name = item["name"]
                     
