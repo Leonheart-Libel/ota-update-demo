@@ -1,2 +1,3 @@
 requests>=2.25.0
+psutil>=5.9.0
 # Add any other dependencies required by your application
