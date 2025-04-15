@@ -53,7 +53,7 @@ logger.info(f"Using application version: {APP_VERSION}")
 class WeatherSimulator:
     """Simulates weather patterns with realistic variations over time"""
     
-    def __init__(self):
+ def __init__(self):
         # Base values for different metrics
         self.base_temperature = random.uniform(15.0, 25.0)  # Celsius
         self.base_humidity = random.uniform(40.0, 70.0)     # Percentage
