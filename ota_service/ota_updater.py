@@ -289,16 +289,34 @@ class OTAUpdater:
             with open(buffer_path, "r") as f:
                 for line in f:
                     data = json.loads(line.strip())
-                    # Insert into both tables
-                    conn.execute(
-                        "INSERT INTO log_data VALUES (?, ?, ?, ?)",
-                        (data["timestamp"], data["value"], data["message"], data["version"])
-                    )
-                    # ... similar insert for weather_data
                     
+                    # Insert into log_data (exclude 'id')
+                    conn.execute(
+                        """INSERT INTO log_data 
+                        (timestamp, value, message, version) 
+                        VALUES (?, ?, ?, ?)""",
+                        (data["timestamp"], data["value"], 
+                        data["message"], data["version"])
+                    )
+                    
+                    # Insert into weather_data (if used)
+                    weather = data.get("weather", {})
+                    conn.execute(
+                        """INSERT INTO weather_data 
+                        (timestamp, temperature, humidity, pressure, 
+                            wind_speed, wind_direction, precipitation, 
+                            condition, message, version) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (data["timestamp"], weather.get("temperature", 0.0),
+                        weather.get("humidity", 0.0), weather.get("pressure", 0.0),
+                        weather.get("wind_speed", 0.0), weather.get("wind_direction", 0.0),
+                        weather.get("precipitation", 0.0), weather.get("condition", ""),
+                        data["message"], data["version"])
+                    )
+            
             conn.commit()
             os.remove(buffer_path)
-            logger.info(f"Processed {f.tell()} bytes from buffer")
+            logger.info(f"Processed buffered data successfully")
             
         except Exception as e:
             logger.error(f"Buffer processing failed: {str(e)}")
