@@ -2,7 +2,7 @@
 # This file is updated by the OTA service
 
 # Data generation interval in seconds
-INTERVAL = 10
+INTERVAL = 5
 
 # Enable extended logging (more detailed output)
 ENABLE_EXTENDED_LOGGING = True
