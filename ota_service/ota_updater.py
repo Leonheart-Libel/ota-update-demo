@@ -256,39 +256,74 @@ class OTAUpdater:
             return False
     
     def start_application(self):
-        """Start the application process."""
+        """Start app and process buffer"""
         logger.info("Starting application...")
         
         try:
-            # Start the application as a subprocess
+            # Start the application
             self.app_process = subprocess.Popen(
                 [sys.executable, f"{self.app_dir}/app.py"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
+            
+            # Process buffer after startup
+            self._process_buffer()
+            
             logger.info(f"Application started with PID {self.app_process.pid}")
             return True
         except Exception as e:
             logger.error(f"Error starting application: {str(e)}")
             return False
     
+    def _process_buffer(self):
+        """Merge buffered data into main database"""
+        buffer_path = "data/buffer.json"
+        if not os.path.exists(buffer_path):
+            return
+
+        logger.info("Processing buffered data...")
+        conn = sqlite3.connect(self.db_path)
+        
+        try:
+            with open(buffer_path, "r") as f:
+                for line in f:
+                    data = json.loads(line.strip())
+                    # Insert into both tables
+                    conn.execute(
+                        "INSERT INTO log_data VALUES (?, ?, ?, ?)",
+                        (data["timestamp"], data["value"], data["message"], data["version"])
+                    )
+                    # ... similar insert for weather_data
+                    
+            conn.commit()
+            os.remove(buffer_path)
+            logger.info(f"Processed {f.tell()} bytes from buffer")
+            
+        except Exception as e:
+            logger.error(f"Buffer processing failed: {str(e)}")
+            conn.rollback()
+            
+        finally:
+            conn.close()
+
     def stop_application(self):
-        """Stop the application process."""
+        """Modified graceful shutdown"""
         if self.app_process:
             logger.info(f"Stopping application with PID {self.app_process.pid}")
             try:
-                # Send terminate signal
-                self.app_process.terminate()
+                # Send SIGTERM instead of terminate()
+                self.app_process.send_signal(signal.SIGTERM)
                 
-                # Wait up to 5 seconds for graceful termination
-                for _ in range(5):
+                # Wait longer for graceful shutdown (30 seconds)
+                for _ in range(30):
                     if self.app_process.poll() is not None:
                         break
                     time.sleep(1)
                 
-                # Force kill if not terminated
+                # Force kill if still running
                 if self.app_process.poll() is None:
-                    logger.warning("Application did not terminate gracefully, killing...")
+                    logger.warning("Force killing application")
                     self.app_process.kill()
                 
                 logger.info("Application stopped")

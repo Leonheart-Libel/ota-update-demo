@@ -11,6 +11,9 @@ import logging
 import json
 from datetime import datetime
 import math
+import signal
+import fcntl
+
 
 # Setup logging
 logging.basicConfig(
@@ -132,6 +135,10 @@ class WeatherSimulator:
 
 class EnhancedApplication:
     def __init__(self, db_path="data/app.db"):
+
+        self.shutdown_requested = False
+        signal.signal(signal.SIGTERM, self.handle_termination)
+        
         """Initialize the enhanced application with database connection."""
         logger.info(f"Starting Enhanced Weather Application v{APP_VERSION}")
         
@@ -238,6 +245,40 @@ class EnhancedApplication:
         return data
     
     def store_data(self, data):
+
+        """Store data with buffer fallback"""
+        buffer_path = "data/buffer.json"
+        lock_path = "data/write.lock"
+        
+        try:
+            # Attempt main database write
+            with open(lock_path, "w") as lock_file:
+                # Acquire exclusive lock
+                fcntl.flock(lock_file, fcntl.LOCK_EX)
+                
+                # Original database operations
+                self.cursor.execute(
+                    "INSERT INTO log_data (timestamp, value, message, version) VALUES (?, ?, ?, ?)",
+                    (data["timestamp"], data["value"], data["message"], data["version"])
+                )
+        
+        except (sqlite3.OperationalError, BlockingIOError) as e:
+            # Database locked or write failed - use buffer
+            logger.warning(f"Database unavailable, buffering data: {str(e)}")
+            try:
+                with open(buffer_path, "a") as buffer_file:
+                    buffer_file.write(json.dumps(data) + "\n")
+            except Exception as buffer_error:
+                logger.error(f"Buffer write failed: {str(buffer_error)}")
+                
+        finally:
+            # Release lock if it exists
+            if os.path.exists(lock_path):
+                try:
+                    os.remove(lock_path)
+                except Exception as e:
+                    logger.warning(f"Failed to remove lock file: {str(e)}")
+
         """Store enhanced data in SQLite database."""
         # Store in the original table for backward compatibility
         self.cursor.execute(
@@ -283,6 +324,34 @@ class EnhancedApplication:
         
         try:
             while True:
+                data = self.generate_data()
+                self.store_data(data)
+                
+                if self.enable_extended_logging:
+                    logger.info(f"Weather data stored: {json.dumps(data['weather'], indent=2)}")
+                else:
+                    logger.info(f"Data stored: {data['message']}")
+                    
+                time.sleep(self.interval)
+        except KeyboardInterrupt:
+            logger.info("Application shutdown requested")
+        except Exception as e:
+            logger.error(f"Error in application: {str(e)}")
+        finally:
+            self.conn.close()
+            logger.info("Application stopped")
+    
+    def handle_termination(self, signum, frame):
+        """Handle graceful shutdown signal"""
+        logger.info("Shutdown signal received, finishing current operation...")
+        self.shutdown_requested = True
+
+    def run(self):
+        """Modified run loop with shutdown handling"""
+        logger.info(f"Enhanced Weather Application running with version {APP_VERSION}")
+        
+        try:
+            while not self.shutdown_requested:  # Modified exit condition
                 data = self.generate_data()
                 self.store_data(data)
                 
