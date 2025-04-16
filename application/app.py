@@ -53,7 +53,7 @@ logger.info(f"Using application version: {APP_VERSION}")
 class WeatherSimulator:
     """Simulates weather patterns with realistic variations over time"""
     
- def __init__(self):
+    def __init__(self):
         # Base values for different metrics
         self.base_temperature = random.uniform(15.0, 25.0)  # Celsius
         self.base_humidity = random.uniform(40.0, 70.0)     # Percentage
@@ -261,6 +261,22 @@ class EnhancedApplication:
                     "INSERT INTO log_data (timestamp, value, message, version) VALUES (?, ?, ?, ?)",
                     (data["timestamp"], data["value"], data["message"], data["version"])
                 )
+
+        except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
+            if "readonly" in str(e).lower():
+                logger.warning("Database read-only, buffering data...")
+            else:
+                logger.error(f"Database error: {str(e)}")
+            
+            # Write to buffer
+            try:
+                with open("data/buffer.json", "a") as f:
+                    f.write(json.dumps(data) + "\n")
+            except Exception as buffer_error:
+                logger.error(f"Buffer write failed: {str(buffer_error)}")
+        except Exception as e:
+            logger.error(f"Unexpected error: {str(e)}")
+            raise  # Only crash on unknown errors
         
         except (sqlite3.OperationalError, BlockingIOError) as e:
             # Database locked or write failed - use buffer
