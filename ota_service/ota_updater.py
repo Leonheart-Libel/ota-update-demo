@@ -215,6 +215,31 @@ class OTAUpdater:
         logger.error("Update verification timed out")
         return False
     
+    def stop_application(self):
+        """Modified graceful shutdown"""
+        if self.app_process:
+            logger.info(f"Stopping application with PID {self.app_process.pid}")
+            try:
+                # Send SIGTERM instead of terminate()
+                self.app_process.send_signal(signal.SIGTERM)
+                
+                # Wait longer for graceful shutdown (30 seconds)
+                for _ in range(30):
+                    if self.app_process.poll() is not None:
+                        break
+                    time.sleep(1)
+                
+                # Force kill if still running
+                if self.app_process.poll() is None:
+                    logger.warning("Force killing application")
+                    self.app_process.kill()
+                
+                logger.info("Application stopped")
+            except Exception as e:
+                logger.error(f"Error stopping application: {str(e)}")
+            
+            self.app_process = None
+    
     def rollback(self):
         """Roll back to the previous version."""
         logger.info("Rolling back to previous version...")

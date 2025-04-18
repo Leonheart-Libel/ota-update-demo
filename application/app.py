@@ -11,6 +11,7 @@ import logging
 import json
 from datetime import datetime
 import math
+import signal
 
 # Setup logging
 logging.basicConfig(
@@ -150,6 +151,15 @@ class EnhancedApplication:
         
         # Load configuration
         self.load_config()
+
+        # Add shutdown flag and signal handler
+        self.shutdown_requested = False
+        signal.signal(signal.SIGTERM, self.handle_termination)
+    
+    def handle_termination(self, signum, frame):
+        """Handle graceful shutdown signal"""
+        logger.info("Shutdown signal received, finishing current operation...")
+        self.shutdown_requested = True
         
     def _setup_database(self):
         """Set up database schema for enhanced data storage"""
@@ -278,11 +288,11 @@ class EnhancedApplication:
             self.conn.commit()
         
     def run(self):
-        """Run the enhanced application, generating and storing data periodically."""
+        """Modified run loop with shutdown handling"""
         logger.info(f"Enhanced Weather Application running with version {APP_VERSION}")
         
         try:
-            while True:
+            while not self.shutdown_requested:  # Modified exit condition
                 data = self.generate_data()
                 self.store_data(data)
                 
