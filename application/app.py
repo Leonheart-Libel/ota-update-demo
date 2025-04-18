@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""
-Enhanced application that generates simulated environmental data and stores it in SQLite.
-This version adds weather metrics simulation and more detailed data.
-"""
+"""Enhanced application with Azure SQL integration and device tracking"""
 import os
 import time
 import random
-import sqlite3
 import logging
 import json
+import uuid
+import pymssql
 from datetime import datetime
 import math
 import signal
+from database_config import AZURE_SQL_SERVER, AZURE_SQL_DATABASE, AZURE_SQL_USERNAME, AZURE_SQL_PASSWORD
 
 # Setup logging
 logging.basicConfig(
@@ -133,15 +132,25 @@ class WeatherSimulator:
 
 class EnhancedApplication:
     def __init__(self, db_path="data/app.db"):
-        """Initialize the enhanced application with database connection."""
+        """Initialize with Azure SQL connection"""
         logger.info(f"Starting Enhanced Weather Application v{APP_VERSION}")
+        
+        # Device ID management
+        self.device_id = self._get_device_id()
+        self._update_device_info()
+        
+        # Connect to Azure SQL
+        self.conn = pymssql.connect(
+            server=AZURE_SQL_SERVER,
+            database=AZURE_SQL_DATABASE,
+            user=AZURE_SQL_USERNAME,
+            password=AZURE_SQL_PASSWORD
+        )
+        self.cursor = self.conn.cursor()
+        self._setup_database()
         
         # Ensure data directory exists
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        
-        # Connect to SQLite database
-        self.conn = sqlite3.connect(db_path)
-        self.cursor = self.conn.cursor()
         
         # Create enhanced tables if they don't exist
         self._setup_database()
@@ -160,37 +169,70 @@ class EnhancedApplication:
         """Handle graceful shutdown signal"""
         logger.info("Shutdown signal received, finishing current operation...")
         self.shutdown_requested = True
+
+    def _get_device_id(self):
+        """Get or create persistent device ID"""
+        device_id_path = "data/device_id.txt"
+        os.makedirs(os.path.dirname(device_id_path), exist_ok=True)
+        
+        if os.path.exists(device_id_path):
+            with open(device_id_path, "r") as f:
+                return f.read().strip()
+        else:
+            new_id = str(uuid.uuid4())
+            with open(device_id_path, "w") as f:
+                f.write(new_id)
+            return new_id
+
+    def _update_device_info(self):
+        """Update device information in database"""
+        with pymssql.connect(
+            server=AZURE_SQL_SERVER,
+            database=AZURE_SQL_DATABASE,
+            user=AZURE_SQL_USERNAME,
+            password=AZURE_SQL_PASSWORD
+        ) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    MERGE INTO DeviceInfo AS target
+                    USING (VALUES (%s, %s, %s)) AS source (device_id, app_version, last_updated)
+                    ON target.device_id = source.device_id
+                    WHEN MATCHED THEN
+                        UPDATE SET app_version = source.app_version, last_updated = source.last_updated
+                    WHEN NOT MATCHED THEN
+                        INSERT (device_id, app_version, last_updated)
+                        VALUES (source.device_id, source.app_version, source.last_updated);
+                """, (self.device_id, APP_VERSION, datetime.utcnow()))
+                conn.commit()
         
     def _setup_database(self):
-        """Set up database schema for enhanced data storage"""
-        # Keep the original table for backward compatibility
-        self.cursor.execute('''
-        CREATE TABLE IF NOT EXISTS log_data (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            value REAL,
-            message TEXT,
-            version TEXT
-        )
-        ''')
+        """Create tables if not exists"""
+        self.cursor.execute("""
+            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='DeviceInfo' AND xtype='U')
+            CREATE TABLE DeviceInfo (
+                device_id VARCHAR(36) PRIMARY KEY,
+                app_version VARCHAR(20) NOT NULL,
+                last_updated DATETIME NOT NULL
+            )
+        """)
         
-        # Create new enhanced table for weather data
-        self.cursor.execute('''
-        CREATE TABLE IF NOT EXISTS weather_data (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            temperature REAL,
-            humidity REAL,
-            pressure REAL,
-            wind_speed REAL,
-            wind_direction REAL,
-            precipitation REAL,
-            condition TEXT,
-            message TEXT,
-            version TEXT
-        )
-        ''')
-        
+        self.cursor.execute("""
+            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='WeatherData' AND xtype='U')
+            CREATE TABLE WeatherData (
+                id INT IDENTITY(1,1) PRIMARY KEY,
+                device_id VARCHAR(36) NOT NULL,
+                app_version VARCHAR(20) NOT NULL,
+                timestamp DATETIME NOT NULL,
+                temperature DECIMAL(5,2) NOT NULL,
+                humidity DECIMAL(5,2) NOT NULL,
+                pressure DECIMAL(7,2) NOT NULL,
+                wind_speed DECIMAL(5,2) NOT NULL,
+                wind_direction DECIMAL(5,2) NOT NULL,
+                precipitation DECIMAL(5,2) NOT NULL,
+                condition VARCHAR(50) NOT NULL,
+                FOREIGN KEY (device_id) REFERENCES DeviceInfo(device_id)
+            )
+        """)
         self.conn.commit()
     
     def load_config(self):
@@ -248,26 +290,27 @@ class EnhancedApplication:
         return data
     
     def store_data(self, data):
-        """Store enhanced data in SQLite database."""
-        # Store in the original table for backward compatibility
-        self.cursor.execute(
-            "INSERT INTO log_data (timestamp, value, message, version) VALUES (?, ?, ?, ?)",
-            (data["timestamp"], data["value"], data["message"], data["version"])
-        )
-        
-        # Store in the new weather_data table
+        """Store data in Azure SQL"""
         weather = data["weather"]
-        self.cursor.execute(
-            """INSERT INTO weather_data 
-               (timestamp, temperature, humidity, pressure, wind_speed, wind_direction, 
-                precipitation, condition, message, version) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (data["timestamp"], weather["temperature"], weather["humidity"], 
-             weather["pressure"], weather["wind_speed"], weather["wind_direction"],
-             weather["precipitation"], weather["condition"], data["message"], data["version"])
-        )
-        
-        self.conn.commit()
+        try:
+            self.cursor.execute("""
+                INSERT INTO WeatherData (
+                    device_id, app_version, timestamp,
+                    temperature, humidity, pressure,
+                    wind_speed, wind_direction,
+                    precipitation, condition
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                self.device_id, data["version"], data["timestamp"],
+                weather["temperature"], weather["humidity"],
+                weather["pressure"], weather["wind_speed"],
+                weather["wind_direction"], weather["precipitation"],
+                weather["condition"]
+            ))
+            self.conn.commit()
+        except Exception as e:
+            logger.error(f"Database error: {str(e)}")
+            self.conn.rollback()
         
         # Clean up old data if retention period is set
         if self.data_retention_days > 0:
