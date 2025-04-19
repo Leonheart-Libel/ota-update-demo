@@ -11,6 +11,7 @@ import logging
 import subprocess
 import signal
 from datetime import datetime
+import pymssql
 
 from github_client import GitHubClient
 from version_manager import VersionManager
