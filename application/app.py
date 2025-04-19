@@ -13,6 +13,8 @@ from datetime import datetime
 import math
 import signal
 from app_config import AZURE_SQL_SERVER, AZURE_SQL_DB, AZURE_SQL_USER, AZURE_SQL_PASSWORD
+import uuid
+from pathlib import Path
 
 # Setup logging
 logging.basicConfig(
@@ -138,8 +140,8 @@ class EnhancedApplication:
         logger.info(f"Starting Enhanced Weather Application v{APP_VERSION}")
         
         # 1. Create directory for device_id first
-        device_id_path = "device_id.txt"
-        os.makedirs(os.path.dirname(device_id_path), exist_ok=True)
+        device_id_path = Path("device_id.txt")
+        device_id_path.parent.mkdir(parents=True, exist_ok=True)
         
         # 2. Load configuration before DB connection (in case credentials change)
         self.load_config()
@@ -273,36 +275,44 @@ class EnhancedApplication:
     
     def store_data(self, data):
         """Store data in Azure SQL"""
-        # Update DeviceInfo
-        self.cursor.execute('''
-        MERGE INTO DeviceInfo AS target
-        USING (VALUES (%s, %s, GETDATE())) AS source (DeviceID, AppVersion, LastUpdated)
-        ON target.DeviceID = source.DeviceID
-        WHEN MATCHED THEN
-            UPDATE SET AppVersion = source.AppVersion, LastUpdated = source.LastUpdated
-        WHEN NOT MATCHED THEN
-            INSERT (DeviceID, AppVersion, LastUpdated)
-            VALUES (source.DeviceID, source.AppVersion, source.LastUpdated);
-        ''', (self.device_id, data["version"]))
-        
-        # Insert WeatherData
-        weather = data["weather"]
-        self.cursor.execute('''
-        INSERT INTO WeatherData (DeviceID, Timestamp, Temperature, Humidity,
-            Pressure, WindSpeed, WindDirection, Precipitation, Condition)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ''', (
-            self.device_id,
-            datetime.fromisoformat(data["timestamp"]),
-            weather["temperature"],
-            weather["humidity"],
-            weather["pressure"],
-            weather["wind_speed"],
-            weather["wind_direction"],
-            weather["precipitation"],
-            weather["condition"]
-        ))
-        self.conn.commit()
+        try:
+            # Update DeviceInfo using corrected MERGE
+            self.cursor.execute('''
+                MERGE INTO DeviceInfo AS target
+                USING (SELECT %s AS DeviceID, %s AS AppVersion, GETDATE() AS LastUpdated) AS source
+                ON target.DeviceID = source.DeviceID
+                WHEN MATCHED THEN
+                    UPDATE SET 
+                        AppVersion = source.AppVersion,
+                        LastUpdated = source.LastUpdated
+                WHEN NOT MATCHED THEN
+                    INSERT (DeviceID, AppVersion, LastUpdated)
+                    VALUES (source.DeviceID, source.AppVersion, source.LastUpdated);
+            ''', (self.device_id, data["version"]))
+            
+            # Insert WeatherData
+            weather = data["weather"]
+            self.cursor.execute('''
+                INSERT INTO WeatherData (
+                    DeviceID, Timestamp, Temperature, Humidity,
+                    Pressure, WindSpeed, WindDirection, Precipitation, Condition
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (
+                self.device_id,
+                datetime.fromisoformat(data["timestamp"]),
+                weather["temperature"],
+                weather["humidity"],
+                weather["pressure"],
+                weather["wind_speed"],
+                weather["wind_direction"],
+                weather["precipitation"],
+                weather["condition"]
+            ))
+            self.conn.commit()
+            
+        except Exception as e:
+            logger.error(f"Database operation failed: {str(e)}")
+            self.conn.rollback()
         
         # Clean up old data if retention period is set
         if self.data_retention_days > 0:
