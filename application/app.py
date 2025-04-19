@@ -15,6 +15,7 @@ import signal
 from app_config import AZURE_SQL_SERVER, AZURE_SQL_DB, AZURE_SQL_USER, AZURE_SQL_PASSWORD
 import uuid
 from pathlib import Path
+from datetime import timedelta
 
 # Setup logging
 logging.basicConfig(
@@ -313,22 +314,16 @@ class EnhancedApplication:
         except Exception as e:
             logger.error(f"Database operation failed: {str(e)}")
             self.conn.rollback()
+            return
         
         # Clean up old data if retention period is set
         if self.data_retention_days > 0:
-            cutoff_date = datetime.now().replace(
-                hour=0, minute=0, second=0, microsecond=0
-            ).toordinal() - self.data_retention_days
+            cutoff_date = datetime.now() - timedelta(days=self.data_retention_days)
             
-            cutoff_timestamp = datetime.fromordinal(cutoff_date).isoformat()
-            
+            # Only clean WeatherData (log_data table doesn't exist in Azure SQL)
             self.cursor.execute(
-                "DELETE FROM log_data WHERE timestamp < ?", 
-                (cutoff_timestamp,)
-            )
-            self.cursor.execute(
-                "DELETE FROM weather_data WHERE timestamp < ?", 
-                (cutoff_timestamp,)
+                "DELETE FROM WeatherData WHERE Timestamp < %s",
+                (cutoff_date,)
             )
             self.conn.commit()
         
