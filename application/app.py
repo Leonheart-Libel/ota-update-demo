@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Enhanced application with Azure SQL integration and device tracking"""
+"""
+Enhanced application that generates simulated environmental data and stores it in SQLite.
+This version adds weather metrics simulation and more detailed data.
+"""
 import os
 import time
 import random
+import pymssql
 import logging
 import json
-import uuid
-import pymssql
 from datetime import datetime
 import math
 import signal
-from database_config import AZURE_SQL_SERVER, AZURE_SQL_DATABASE, AZURE_SQL_USERNAME, AZURE_SQL_PASSWORD
 
 # Setup logging
 logging.basicConfig(
@@ -132,25 +133,19 @@ class WeatherSimulator:
 
 class EnhancedApplication:
     def __init__(self, db_path="data/app.db"):
-        """Initialize with Azure SQL connection"""
+        """Initialize the enhanced application with database connection."""
         logger.info(f"Starting Enhanced Weather Application v{APP_VERSION}")
-        
-        # Device ID management
-        self.device_id = self._get_device_id()
-        self._update_device_info()
-        
-        # Connect to Azure SQL
-        self.conn = pymssql.connect(
-            server=AZURE_SQL_SERVER,
-            database=AZURE_SQL_DATABASE,
-            user=AZURE_SQL_USERNAME,
-            password=AZURE_SQL_PASSWORD
-        )
-        self.cursor = self.conn.cursor()
-        self._setup_database()
         
         # Ensure data directory exists
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        
+        # Connect to SQL
+        self.conn = pymssql.connect(
+        server='your-azure-sql-server.database.windows.net',
+        user='admin@your-azure-sql-server',
+        password='your-password',
+        database='your-database-name'
+    )
         
         # Create enhanced tables if they don't exist
         self._setup_database()
@@ -164,17 +159,12 @@ class EnhancedApplication:
         # Add shutdown flag and signal handler
         self.shutdown_requested = False
         signal.signal(signal.SIGTERM, self.handle_termination)
-    
-    def handle_termination(self, signum, frame):
-        """Handle graceful shutdown signal"""
-        logger.info("Shutdown signal received, finishing current operation...")
-        self.shutdown_requested = True
+
+        self.device_id = self._get_device_id()
 
     def _get_device_id(self):
-        """Get or create persistent device ID"""
-        device_id_path = "data/device_id.txt"
-        os.makedirs(os.path.dirname(device_id_path), exist_ok=True)
-        
+        """Get or create device ID"""
+        device_id_path = "device_id.txt"
         if os.path.exists(device_id_path):
             with open(device_id_path, "r") as f:
                 return f.read().strip()
@@ -184,55 +174,38 @@ class EnhancedApplication:
                 f.write(new_id)
             return new_id
 
-    def _update_device_info(self):
-        """Update device information in database"""
-        with pymssql.connect(
-            server=AZURE_SQL_SERVER,
-            database=AZURE_SQL_DATABASE,
-            user=AZURE_SQL_USERNAME,
-            password=AZURE_SQL_PASSWORD
-        ) as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    MERGE INTO DeviceInfo AS target
-                    USING (VALUES (%s, %s, %s)) AS source (device_id, app_version, last_updated)
-                    ON target.device_id = source.device_id
-                    WHEN MATCHED THEN
-                        UPDATE SET app_version = source.app_version, last_updated = source.last_updated
-                    WHEN NOT MATCHED THEN
-                        INSERT (device_id, app_version, last_updated)
-                        VALUES (source.device_id, source.app_version, source.last_updated);
-                """, (self.device_id, APP_VERSION, datetime.utcnow()))
-                conn.commit()
+    def handle_termination(self, signum, frame):
+        """Handle graceful shutdown signal"""
+        logger.info("Shutdown signal received, finishing current operation...")
+        self.shutdown_requested = True
         
     def _setup_database(self):
-        """Create tables if not exists"""
-        self.cursor.execute("""
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='DeviceInfo' AND xtype='U')
-            CREATE TABLE DeviceInfo (
-                device_id VARCHAR(36) PRIMARY KEY,
-                app_version VARCHAR(20) NOT NULL,
-                last_updated DATETIME NOT NULL
-            )
-        """)
+        """Set up Azure SQL tables"""
+        self.cursor.execute('''
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='DeviceInfo')
+        CREATE TABLE DeviceInfo (
+            DeviceID VARCHAR(255) PRIMARY KEY,
+            AppVersion VARCHAR(20),
+            LastUpdated DATETIME
+        )
+        ''')
         
-        self.cursor.execute("""
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='WeatherData' AND xtype='U')
-            CREATE TABLE WeatherData (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                device_id VARCHAR(36) NOT NULL,
-                app_version VARCHAR(20) NOT NULL,
-                timestamp DATETIME NOT NULL,
-                temperature DECIMAL(5,2) NOT NULL,
-                humidity DECIMAL(5,2) NOT NULL,
-                pressure DECIMAL(7,2) NOT NULL,
-                wind_speed DECIMAL(5,2) NOT NULL,
-                wind_direction DECIMAL(5,2) NOT NULL,
-                precipitation DECIMAL(5,2) NOT NULL,
-                condition VARCHAR(50) NOT NULL,
-                FOREIGN KEY (device_id) REFERENCES DeviceInfo(device_id)
-            )
-        """)
+        self.cursor.execute('''
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='WeatherData')
+        CREATE TABLE WeatherData (
+            ID INT IDENTITY(1,1) PRIMARY KEY,
+            DeviceID VARCHAR(255),
+            Timestamp DATETIME,
+            Temperature FLOAT,
+            Humidity FLOAT,
+            Pressure FLOAT,
+            WindSpeed FLOAT,
+            WindDirection FLOAT,
+            Precipitation FLOAT,
+            Condition VARCHAR(255),
+            FOREIGN KEY (DeviceID) REFERENCES DeviceInfo(DeviceID)
+        )
+        ''')
         self.conn.commit()
     
     def load_config(self):
@@ -261,7 +234,7 @@ class EnhancedApplication:
         
     def generate_data(self):
         """Generate enhanced weather data with timestamp."""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now().isoformat()
         
         # Get simulated weather data
         weather_data = self.weather_simulator.update()
@@ -291,26 +264,36 @@ class EnhancedApplication:
     
     def store_data(self, data):
         """Store data in Azure SQL"""
+        # Update DeviceInfo
+        self.cursor.execute('''
+        MERGE INTO DeviceInfo AS target
+        USING (VALUES (%s, %s, GETDATE())) AS source (DeviceID, AppVersion, LastUpdated)
+        ON target.DeviceID = source.DeviceID
+        WHEN MATCHED THEN
+            UPDATE SET AppVersion = source.AppVersion, LastUpdated = source.LastUpdated
+        WHEN NOT MATCHED THEN
+            INSERT (DeviceID, AppVersion, LastUpdated)
+            VALUES (source.DeviceID, source.AppVersion, source.LastUpdated);
+        ''', (self.device_id, data["version"]))
+        
+        # Insert WeatherData
         weather = data["weather"]
-        try:
-            self.cursor.execute("""
-                INSERT INTO WeatherData (
-                    device_id, app_version, timestamp,
-                    temperature, humidity, pressure,
-                    wind_speed, wind_direction,
-                    precipitation, condition
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                self.device_id, data["version"], data["timestamp"],
-                weather["temperature"], weather["humidity"],
-                weather["pressure"], weather["wind_speed"],
-                weather["wind_direction"], weather["precipitation"],
-                weather["condition"]
-            ))
-            self.conn.commit()
-        except Exception as e:
-            logger.error(f"Database error: {str(e)}")
-            self.conn.rollback()
+        self.cursor.execute('''
+        INSERT INTO WeatherData (DeviceID, Timestamp, Temperature, Humidity,
+            Pressure, WindSpeed, WindDirection, Precipitation, Condition)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (
+            self.device_id,
+            datetime.fromisoformat(data["timestamp"]),
+            weather["temperature"],
+            weather["humidity"],
+            weather["pressure"],
+            weather["wind_speed"],
+            weather["wind_direction"],
+            weather["precipitation"],
+            weather["condition"]
+        ))
+        self.conn.commit()
         
         # Clean up old data if retention period is set
         if self.data_retention_days > 0:
@@ -321,9 +304,13 @@ class EnhancedApplication:
             cutoff_timestamp = datetime.fromordinal(cutoff_date).isoformat()
             
             self.cursor.execute(
-    "DELETE FROM WeatherData WHERE timestamp < %s",  # Use %s for SQL Server
-    (cutoff_timestamp,)
-)
+                "DELETE FROM log_data WHERE timestamp < ?", 
+                (cutoff_timestamp,)
+            )
+            self.cursor.execute(
+                "DELETE FROM weather_data WHERE timestamp < ?", 
+                (cutoff_timestamp,)
+            )
             self.conn.commit()
         
     def run(self):

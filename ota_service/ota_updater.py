@@ -11,11 +11,10 @@ import logging
 import subprocess
 import signal
 from datetime import datetime
-import pymssql
+import sqlite3
 
 from github_client import GitHubClient
 from version_manager import VersionManager
-from database_config import AZURE_SQL_SERVER, AZURE_SQL_DATABASE, AZURE_SQL_USERNAME, AZURE_SQL_PASSWORD
 
 # Setup logging
 logging.basicConfig(
@@ -176,30 +175,45 @@ class OTAUpdater:
             self.rollback()
             return False
     
-    def verify_update(self):
-        """Modified verification for Azure SQL"""
-        time.sleep(15)
-        try:
-            with pymssql.connect(
-                server=AZURE_SQL_SERVER,
-                database=AZURE_SQL_DATABASE,
-                user=AZURE_SQL_USERNAME,
-                password=AZURE_SQL_PASSWORD
-            ) as conn:
+    def verify_update(self, timeout=30):
+        """Verify the updated application is working correctly."""
+        logger.info("Verifying update...")
+        
+        # Wait a moment for the application to start
+        time.sleep(5)
+        
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                # Check if application is running
+                if self.app_process and self.app_process.poll() is not None:
+                    logger.error("Application process has terminated")
+                    return False
+                
+                # Check if application is writing to database
+                conn = sqlite3.connect(self.db_path)
                 cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT TOP 1 timestamp 
-                    FROM WeatherData 
-                    WHERE device_id = (
-                        SELECT device_id FROM DeviceInfo 
-                        WHERE app_version = %s
-                    )
-                    ORDER BY timestamp DESC
-                """, (self.current_version,))
-                return cursor.fetchone() is not None
-        except Exception as e:
-            logger.error(f"Verification failed: {str(e)}")
-            return False
+                cursor.execute("SELECT MAX(timestamp) FROM log_data")
+                last_timestamp = cursor.fetchone()[0]
+                conn.close()
+                
+                if last_timestamp:
+                    last_time = datetime.fromisoformat(last_timestamp)
+                    now = datetime.now()
+                    time_diff = (now - last_time).total_seconds()
+                    
+                    # If the last log is within the last 10 seconds, consider the app working
+                    if time_diff < 10:
+                        logger.info("Application is running and writing data")
+                        return True
+            
+            except Exception as e:
+                logger.warning(f"Error during verification: {str(e)}")
+            
+            time.sleep(2)
+        
+        logger.error("Update verification timed out")
+        return False
     
     def stop_application(self):
         """Modified graceful shutdown"""
@@ -312,15 +326,6 @@ class OTAUpdater:
         """Run the OTA update service, periodically checking for updates."""
         logger.info("OTA Update Service running")
         
-        # New: Ensure base directories exist
-        os.makedirs(self.app_dir, exist_ok=True)
-        os.makedirs(self.version_manager.versions_dir, exist_ok=True)
-
-        # New: Auto-initialize if no versions exist
-        if not self.version_manager.get_current_version():
-            logger.info("No versions found, initializing base version")
-            self.version_manager.initialize_from_app_dir(self.app_dir, "2.0.0")
-
         # Start the current version of the application
         if not self.start_application():
             logger.error("Failed to start application, initializing with default version")

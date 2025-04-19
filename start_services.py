@@ -19,37 +19,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Service-Manager")
 
-# Add this at the top of start_services.py
-def check_dependencies():
-    """Verify critical dependencies are installed"""
-    try:
-        import pymssql
-        import requests
-    except ImportError:
-        print("ERROR: Missing dependencies. Run 'python3 setup.py' first!")
-        exit(1)
-
-# Add this at the start of start_services()
 def start_services():
-    """Start services with dependency checks"""
-    check_dependencies()  # <-- New check
-    logger.info("Starting services with auto-configuration...")
-    
-    # Create all required directories
-    required_dirs = [
-        "application", "ota_service", "data", "versions",
-        "application/data", "ota_service/logs"
-    ]
-    
-    for directory in required_dirs:
-        os.makedirs(directory, exist_ok=True)
-        logger.debug(f"Created directory: {directory}")
-
-    # Ensure version.txt exists
-    version_path = "application/version.txt"
-    if not os.path.exists(version_path):
-        with open(version_path, "w") as f:
-            f.write("1.0.0\n")
+    """Start the OTA service and ensure all required directories exist."""
+    logger.info("Starting services...")
     
     # Ensure required directories exist
     for directory in ["application", "ota_service", "data", "versions"]:
