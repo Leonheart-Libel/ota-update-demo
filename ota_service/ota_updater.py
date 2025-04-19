@@ -178,7 +178,7 @@ class OTAUpdater:
     
     def verify_update(self):
         """Modified verification for Azure SQL"""
-        time.sleep(5)
+        time.sleep(15)
         try:
             with pymssql.connect(
                 server=AZURE_SQL_SERVER,
@@ -312,6 +312,15 @@ class OTAUpdater:
         """Run the OTA update service, periodically checking for updates."""
         logger.info("OTA Update Service running")
         
+        # New: Ensure base directories exist
+        os.makedirs(self.app_dir, exist_ok=True)
+        os.makedirs(self.version_manager.versions_dir, exist_ok=True)
+
+        # New: Auto-initialize if no versions exist
+        if not self.version_manager.get_current_version():
+            logger.info("No versions found, initializing base version")
+            self.version_manager.initialize_from_app_dir(self.app_dir, "2.0.0")
+
         # Start the current version of the application
         if not self.start_application():
             logger.error("Failed to start application, initializing with default version")

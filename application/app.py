@@ -261,7 +261,7 @@ class EnhancedApplication:
         
     def generate_data(self):
         """Generate enhanced weather data with timestamp."""
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Get simulated weather data
         weather_data = self.weather_simulator.update()
@@ -321,13 +321,9 @@ class EnhancedApplication:
             cutoff_timestamp = datetime.fromordinal(cutoff_date).isoformat()
             
             self.cursor.execute(
-                "DELETE FROM log_data WHERE timestamp < ?", 
-                (cutoff_timestamp,)
-            )
-            self.cursor.execute(
-                "DELETE FROM weather_data WHERE timestamp < ?", 
-                (cutoff_timestamp,)
-            )
+    "DELETE FROM WeatherData WHERE timestamp < %s",  # Use %s for SQL Server
+    (cutoff_timestamp,)
+)
             self.conn.commit()
         
     def run(self):

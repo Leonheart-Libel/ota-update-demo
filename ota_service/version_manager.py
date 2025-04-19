@@ -19,6 +19,10 @@ class VersionManager:
         
         # Create versions directory if it doesn't exist
         os.makedirs(versions_dir, exist_ok=True)
+
+        # New initialization check
+        if not os.path.exists(self.version_file) or len(self.versions) == 0:
+            self.initialize_from_app_dir("application", "2.0.0")
         
         # Load version history if it exists
         self.versions = []
@@ -31,6 +35,38 @@ class VersionManager:
                 logger.error(f"Error loading version history: {str(e)}")
         
         logger.info(f"Version history: {self.versions}")
+
+    def initialize_from_app_dir(self, app_dir, version="2.0.0"):
+        """Enhanced initialization with automatic file copying"""
+        try:
+            version_dir = self.get_version_dir(version)
+            os.makedirs(version_dir, exist_ok=True)
+
+            # Copy essential files
+            essential_files = [
+                "app.py", "app_config.py", "database_config.py",
+                "version.txt", "requirements.txt"
+            ]
+            
+            for file_name in essential_files:
+                src = os.path.join(app_dir, file_name)
+                if os.path.exists(src):
+                    shutil.copy2(src, os.path.join(version_dir, file_name))
+                else:
+                    logger.warning(f"Missing essential file: {file_name}")
+
+            # Create version.txt if missing
+            version_path = os.path.join(version_dir, "version.txt")
+            if not os.path.exists(version_path):
+                with open(version_path, "w") as f:
+                    f.write(version)
+
+            self.set_current_version(version)
+            logger.info(f"Auto-initialized version {version}")
+            return True
+        except Exception as e:
+            logger.error(f"Auto-initialization failed: {str(e)}")
+            return False
     
     def get_current_version(self):
         """Get the current version."""
@@ -86,7 +122,7 @@ class VersionManager:
             logger.error(f"Error backing up current version: {str(e)}")
             return False
     
-    def initialize_from_app_dir(self, app_dir, version="1.0.0"):
+    def initialize_from_app_dir(self, app_dir, version="2.0.0"):
         """Initialize version history from current app directory."""
         try:
             # Create version directory
