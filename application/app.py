@@ -12,6 +12,7 @@ import json
 from datetime import datetime
 import math
 import signal
+from app_config import AZURE_SQL_SERVER, AZURE_SQL_DB, AZURE_SQL_USER, AZURE_SQL_PASSWORD
 
 # Setup logging
 logging.basicConfig(
@@ -141,10 +142,10 @@ class EnhancedApplication:
         
         # Connect to SQL
         self.conn = pymssql.connect(
-        server='your-azure-sql-server.database.windows.net',
-        user='admin@your-azure-sql-server',
-        password='your-password',
-        database='your-database-name'
+        server=AZURE_SQL_SERVER,
+        user=AZURE_SQL_USER,
+        password=AZURE_SQL_PASSWORD,
+        database=AZURE_SQL_DB
     )
         
         # Create enhanced tables if they don't exist
