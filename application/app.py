@@ -133,35 +133,43 @@ class WeatherSimulator:
 
 
 class EnhancedApplication:
-    def __init__(self, db_path="data/app.db"):
+    def __init__(self):
         """Initialize the enhanced application with database connection."""
         logger.info(f"Starting Enhanced Weather Application v{APP_VERSION}")
         
-        # Ensure data directory exists
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        # 1. Create directory for device_id first
+        device_id_path = "device_id.txt"
+        os.makedirs(os.path.dirname(device_id_path), exist_ok=True)
         
-        # Connect to SQL
-        self.conn = pymssql.connect(
-        server=AZURE_SQL_SERVER,
-        user=AZURE_SQL_USER,
-        password=AZURE_SQL_PASSWORD,
-        database=AZURE_SQL_DB
-    )
+        # 2. Load configuration before DB connection (in case credentials change)
+        self.load_config()
         
-        # Create enhanced tables if they don't exist
-        self._setup_database()
+        # 3. Initialize device ID before any DB operations
+        self.device_id = self._get_device_id()
         
-        # Initialize weather simulator
+        try:
+            # 4. Azure SQL Connection
+            self.conn = pymssql.connect(
+                server=AZURE_SQL_SERVER,
+                user=AZURE_SQL_USER,
+                password=AZURE_SQL_PASSWORD,
+                database=AZURE_SQL_DB
+            )
+            self.cursor = self.conn.cursor()
+            
+            # 5. Database setup (ONLY CALL ONCE)
+            self._setup_database()
+            
+        except Exception as e:
+            logger.error(f"Database initialization failed: {str(e)}")
+            raise SystemExit(1)
+
+        # 6. Initialize remaining components
         self.weather_simulator = WeatherSimulator()
         
-        # Load configuration
-        self.load_config()
-
-        # Add shutdown flag and signal handler
+        # 7. Signal handling
         self.shutdown_requested = False
         signal.signal(signal.SIGTERM, self.handle_termination)
-
-        self.device_id = self._get_device_id()
 
     def _get_device_id(self):
         """Get or create device ID"""
