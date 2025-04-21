@@ -6,13 +6,12 @@ This version adds weather metrics simulation and more detailed data.
 import os
 import time
 import random
-import sqlite3
 import logging
 import json
 from datetime import datetime
 import math
 import signal
-import sys
+from database_manager import DatabaseManager
 
 # Setup logging
 logging.basicConfig(
@@ -133,25 +132,25 @@ class WeatherSimulator:
 
 
 class EnhancedApplication:
-    def __init__(self, db_config_path="config/db_config.json"):
-        """Initialize the enhanced application with Azure database connection."""
+    def __init__(self, db_path="data/app.db"):
+        """Initialize the enhanced application with database connection."""
         logger.info(f"Starting Enhanced Weather Application v{APP_VERSION}")
         
-        # Import the Azure DB Client
-        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from database.azure_client import AzureDBClient
+        # Ensure data directory exists
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
         
-        # Connect to Azure SQL database
-        self.db_client = AzureDBClient(db_config_path)
+        self.db_manager = DatabaseManager()
+        self.cursor = self.conn.cursor()
         
-        # Register device with current version
-        self.db_client.register_device(APP_VERSION)
+        # Create enhanced tables if they don't exist
+        self._setup_database()
         
         # Initialize weather simulator
         self.weather_simulator = WeatherSimulator()
         
         # Load configuration
         self.load_config()
+        self.db_manager.register_device(APP_VERSION)
 
         # Add shutdown flag and signal handler
         self.shutdown_requested = False
@@ -250,13 +249,12 @@ class EnhancedApplication:
     
     def store_data(self, data):
         """Store enhanced data in Azure SQL database."""
-        # Store in the Azure SQL database
-        success = self.db_client.store_weather_data(data)
+        result = self.db_manager.store_weather_data(data)
         
-        if not success:
-            logger.error("Failed to store data in Azure SQL database")
+        # Clean up old data if retention period is set - handled by SQL Server
+        # through maintenance plans or triggers if needed
         
-        return success
+        return result
         
     def run(self):
         """Modified run loop with shutdown handling"""
@@ -278,9 +276,7 @@ class EnhancedApplication:
         except Exception as e:
             logger.error(f"Error in application: {str(e)}")
         finally:
-            # Close the database connection
-            if hasattr(self, 'db_client'):
-                self.db_client.close()
+            self.conn.close()
             logger.info("Application stopped")
 
 if __name__ == "__main__":

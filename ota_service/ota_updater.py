@@ -11,8 +11,7 @@ import logging
 import subprocess
 import signal
 from datetime import datetime
-import sqlite3
-
+from database_manager import DatabaseManager
 from github_client import GitHubClient
 from version_manager import VersionManager
 
@@ -157,6 +156,8 @@ class OTAUpdater:
             # Update current version
             self.version_manager.set_current_version(version)
             self.current_version = version
+            self.db_manager.update_device_version(version)
+
             
             # Start the updated application
             self.start_application()
@@ -190,14 +191,18 @@ class OTAUpdater:
                     logger.error("Application process has terminated")
                     return False
                 
-                # Check if device registration was successful
-                # by looking at device registration log entries
-                with open("application/app.log", "r") as f:
-                    logs = f.read()
-                    if "Device " in logs and " registered with version " in logs:
-                        logger.info("Application is running and connected to database")
-                        return True
+                # Check if application is writing to database
+                last_timestamp = self.db_manager.get_latest_data_timestamp()
                 
+                if last_timestamp:
+                    now = datetime.now()
+                    time_diff = (now - last_timestamp).total_seconds()
+                    
+                    # If the last log is within the last 30 seconds, consider the app working
+                    if time_diff < 30:
+                        logger.info("Application is running and writing data")
+                        return True
+            
             except Exception as e:
                 logger.warning(f"Error during verification: {str(e)}")
             
