@@ -48,6 +48,9 @@ class OTAUpdater:
             max_versions=self.config.get("max_versions", 5)
         )
         
+        # Initialize database manager
+        self.db_manager = DatabaseManager(config_path)
+        
         # Set up paths
         self.app_dir = self.config.get("app_dir", "application")
         self.app_process = None
@@ -212,22 +215,22 @@ class OTAUpdater:
         return False
     
     def stop_application(self):
-        """Modified graceful shutdown"""
+        """Stop the application process with graceful shutdown."""
         if self.app_process:
             logger.info(f"Stopping application with PID {self.app_process.pid}")
             try:
-                # Send SIGTERM instead of terminate()
+                # Send SIGTERM for graceful shutdown
                 self.app_process.send_signal(signal.SIGTERM)
                 
-                # Wait longer for graceful shutdown (20 seconds)
+                # Wait up to 20 seconds for graceful termination
                 for _ in range(20):
                     if self.app_process.poll() is not None:
                         break
                     time.sleep(1)
                 
-                # Force kill if still running
+                # Force kill if not terminated
                 if self.app_process.poll() is None:
-                    logger.warning("Force killing application")
+                    logger.warning("Application did not terminate gracefully, killing...")
                     self.app_process.kill()
                 
                 logger.info("Application stopped")
@@ -255,7 +258,7 @@ class OTAUpdater:
             previous_dir = self.version_manager.get_version_dir(previous_version)
             
             # Copy previous version files to application directory
-            app_files = [f for f in os.listdir(previous_dir) if f.endswith(".py")]
+            app_files = [f for f in os.listdir(previous_dir) if f.endswith((".py", ".txt"))]
             for file in app_files:
                 shutil.copy2(
                     os.path.join(previous_dir, file),
@@ -292,31 +295,6 @@ class OTAUpdater:
         except Exception as e:
             logger.error(f"Error starting application: {str(e)}")
             return False
-    
-    def stop_application(self):
-        """Stop the application process."""
-        if self.app_process:
-            logger.info(f"Stopping application with PID {self.app_process.pid}")
-            try:
-                # Send terminate signal
-                self.app_process.terminate()
-                
-                # Wait up to 5 seconds for graceful termination
-                for _ in range(5):
-                    if self.app_process.poll() is not None:
-                        break
-                    time.sleep(1)
-                
-                # Force kill if not terminated
-                if self.app_process.poll() is None:
-                    logger.warning("Application did not terminate gracefully, killing...")
-                    self.app_process.kill()
-                
-                logger.info("Application stopped")
-            except Exception as e:
-                logger.error(f"Error stopping application: {str(e)}")
-            
-            self.app_process = None
     
     def run(self):
         """Run the OTA update service, periodically checking for updates."""

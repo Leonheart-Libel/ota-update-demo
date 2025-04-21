@@ -139,11 +139,8 @@ class EnhancedApplication:
         # Ensure data directory exists
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         
+        # Initialize database connection
         self.db_manager = DatabaseManager()
-        self.cursor = self.conn.cursor()
-        
-        # Create enhanced tables if they don't exist
-        self._setup_database()
         
         # Initialize weather simulator
         self.weather_simulator = WeatherSimulator()
@@ -161,38 +158,6 @@ class EnhancedApplication:
         logger.info("Shutdown signal received, finishing current operation...")
         self.shutdown_requested = True
         
-    def _setup_database(self):
-        """Set up database schema for enhanced data storage"""
-        # Keep the original table for backward compatibility
-        self.cursor.execute('''
-        CREATE TABLE IF NOT EXISTS log_data (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            value REAL,
-            message TEXT,
-            version TEXT
-        )
-        ''')
-        
-        # Create new enhanced table for weather data
-        self.cursor.execute('''
-        CREATE TABLE IF NOT EXISTS weather_data (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            temperature REAL,
-            humidity REAL,
-            pressure REAL,
-            wind_speed REAL,
-            wind_direction REAL,
-            precipitation REAL,
-            condition TEXT,
-            message TEXT,
-            version TEXT
-        )
-        ''')
-        
-        self.conn.commit()
-    
     def load_config(self):
         """Load application configuration"""
         self.interval = 5  # Default interval
@@ -276,7 +241,6 @@ class EnhancedApplication:
         except Exception as e:
             logger.error(f"Error in application: {str(e)}")
         finally:
-            self.conn.close()
             logger.info("Application stopped")
 
 if __name__ == "__main__":
