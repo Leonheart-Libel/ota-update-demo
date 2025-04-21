@@ -30,7 +30,7 @@ def start_services():
     # Start OTA service
     logger.info("Starting OTA Update Service...")
     ota_process = subprocess.Popen(
-        [sys.executable, "ota_service/ota_updater.py"],
+        [sys.executable, "ota_updater.py"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
