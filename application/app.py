@@ -6,16 +6,13 @@ This version adds weather metrics simulation and more detailed data.
 import os
 import time
 import random
-import pymssql
+import sqlite3
 import logging
 import json
 from datetime import datetime
 import math
 import signal
-from app_config import AZURE_SQL_SERVER, AZURE_SQL_DB, AZURE_SQL_USER, AZURE_SQL_PASSWORD
-import uuid
-from pathlib import Path
-from datetime import timedelta
+import sys
 
 # Setup logging
 logging.basicConfig(
@@ -136,88 +133,65 @@ class WeatherSimulator:
 
 
 class EnhancedApplication:
-    def __init__(self):
-        """Initialize the enhanced application with database connection."""
+    def __init__(self, db_config_path="config/db_config.json"):
+        """Initialize the enhanced application with Azure database connection."""
         logger.info(f"Starting Enhanced Weather Application v{APP_VERSION}")
         
-        # 1. Create directory for device_id first
-        device_id_path = Path("device_id.txt")
-        device_id_path.parent.mkdir(parents=True, exist_ok=True)
+        # Import the Azure DB Client
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from database.azure_client import AzureDBClient
         
-        # 2. Load configuration before DB connection (in case credentials change)
-        self.load_config()
+        # Connect to Azure SQL database
+        self.db_client = AzureDBClient(db_config_path)
         
-        # 3. Initialize device ID before any DB operations
-        self.device_id = self._get_device_id()
+        # Register device with current version
+        self.db_client.register_device(APP_VERSION)
         
-        try:
-            # 4. Azure SQL Connection
-            self.conn = pymssql.connect(
-                server=AZURE_SQL_SERVER,
-                user=AZURE_SQL_USER,
-                password=AZURE_SQL_PASSWORD,
-                database=AZURE_SQL_DB
-            )
-            self.cursor = self.conn.cursor()
-            
-            # 5. Database setup (ONLY CALL ONCE)
-            self._setup_database()
-            
-        except Exception as e:
-            logger.error(f"Database initialization failed: {str(e)}")
-            raise SystemExit(1)
-
-        # 6. Initialize remaining components
+        # Initialize weather simulator
         self.weather_simulator = WeatherSimulator()
         
-        # 7. Signal handling
+        # Load configuration
+        self.load_config()
+
+        # Add shutdown flag and signal handler
         self.shutdown_requested = False
         signal.signal(signal.SIGTERM, self.handle_termination)
-
-    def _get_device_id(self):
-        """Get or create device ID"""
-        device_id_path = "device_id.txt"
-        if os.path.exists(device_id_path):
-            with open(device_id_path, "r") as f:
-                return f.read().strip()
-        else:
-            new_id = str(uuid.uuid4())
-            with open(device_id_path, "w") as f:
-                f.write(new_id)
-            return new_id
-
+    
     def handle_termination(self, signum, frame):
         """Handle graceful shutdown signal"""
         logger.info("Shutdown signal received, finishing current operation...")
         self.shutdown_requested = True
         
     def _setup_database(self):
-        """Set up Azure SQL tables"""
+        """Set up database schema for enhanced data storage"""
+        # Keep the original table for backward compatibility
         self.cursor.execute('''
-        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='DeviceInfo')
-        CREATE TABLE DeviceInfo (
-            DeviceID VARCHAR(255) PRIMARY KEY,
-            AppVersion VARCHAR(20),
-            LastUpdated DATETIME
+        CREATE TABLE IF NOT EXISTS log_data (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            value REAL,
+            message TEXT,
+            version TEXT
         )
         ''')
         
+        # Create new enhanced table for weather data
         self.cursor.execute('''
-        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='WeatherData')
-        CREATE TABLE WeatherData (
-            ID INT IDENTITY(1,1) PRIMARY KEY,
-            DeviceID VARCHAR(255),
-            Timestamp DATETIME,
-            Temperature FLOAT,
-            Humidity FLOAT,
-            Pressure FLOAT,
-            WindSpeed FLOAT,
-            WindDirection FLOAT,
-            Precipitation FLOAT,
-            Condition VARCHAR(255),
-            FOREIGN KEY (DeviceID) REFERENCES DeviceInfo(DeviceID)
+        CREATE TABLE IF NOT EXISTS weather_data (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            temperature REAL,
+            humidity REAL,
+            pressure REAL,
+            wind_speed REAL,
+            wind_direction REAL,
+            precipitation REAL,
+            condition TEXT,
+            message TEXT,
+            version TEXT
         )
         ''')
+        
         self.conn.commit()
     
     def load_config(self):
@@ -275,57 +249,14 @@ class EnhancedApplication:
         return data
     
     def store_data(self, data):
-        """Store data in Azure SQL"""
-        try:
-            # Update DeviceInfo using corrected MERGE
-            self.cursor.execute('''
-                MERGE INTO DeviceInfo AS target
-                USING (SELECT %s AS DeviceID, %s AS AppVersion, GETDATE() AS LastUpdated) AS source
-                ON target.DeviceID = source.DeviceID
-                WHEN MATCHED THEN
-                    UPDATE SET 
-                        AppVersion = source.AppVersion,
-                        LastUpdated = source.LastUpdated
-                WHEN NOT MATCHED THEN
-                    INSERT (DeviceID, AppVersion, LastUpdated)
-                    VALUES (source.DeviceID, source.AppVersion, source.LastUpdated);
-            ''', (self.device_id, data["version"]))
-            
-            # Insert WeatherData
-            weather = data["weather"]
-            self.cursor.execute('''
-                INSERT INTO WeatherData (
-                    DeviceID, Timestamp, Temperature, Humidity,
-                    Pressure, WindSpeed, WindDirection, Precipitation, Condition
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ''', (
-                self.device_id,
-                datetime.fromisoformat(data["timestamp"]),
-                weather["temperature"],
-                weather["humidity"],
-                weather["pressure"],
-                weather["wind_speed"],
-                weather["wind_direction"],
-                weather["precipitation"],
-                weather["condition"]
-            ))
-            self.conn.commit()
-            
-        except Exception as e:
-            logger.error(f"Database operation failed: {str(e)}")
-            self.conn.rollback()
-            return
+        """Store enhanced data in Azure SQL database."""
+        # Store in the Azure SQL database
+        success = self.db_client.store_weather_data(data)
         
-        # Clean up old data if retention period is set
-        if self.data_retention_days > 0:
-            cutoff_date = datetime.now() - timedelta(days=self.data_retention_days)
-            
-            # Only clean WeatherData (log_data table doesn't exist in Azure SQL)
-            self.cursor.execute(
-                "DELETE FROM WeatherData WHERE Timestamp < %s",
-                (cutoff_date,)
-            )
-            self.conn.commit()
+        if not success:
+            logger.error("Failed to store data in Azure SQL database")
+        
+        return success
         
     def run(self):
         """Modified run loop with shutdown handling"""
@@ -347,7 +278,9 @@ class EnhancedApplication:
         except Exception as e:
             logger.error(f"Error in application: {str(e)}")
         finally:
-            self.conn.close()
+            # Close the database connection
+            if hasattr(self, 'db_client'):
+                self.db_client.close()
             logger.info("Application stopped")
 
 if __name__ == "__main__":

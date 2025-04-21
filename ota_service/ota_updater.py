@@ -190,23 +190,14 @@ class OTAUpdater:
                     logger.error("Application process has terminated")
                     return False
                 
-                # Check if application is writing to database
-                conn = sqlite3.connect(self.db_path)
-                cursor = conn.cursor()
-                cursor.execute("SELECT MAX(timestamp) FROM log_data")
-                last_timestamp = cursor.fetchone()[0]
-                conn.close()
-                
-                if last_timestamp:
-                    last_time = datetime.fromisoformat(last_timestamp)
-                    now = datetime.now()
-                    time_diff = (now - last_time).total_seconds()
-                    
-                    # If the last log is within the last 10 seconds, consider the app working
-                    if time_diff < 10:
-                        logger.info("Application is running and writing data")
+                # Check if device registration was successful
+                # by looking at device registration log entries
+                with open("application/app.log", "r") as f:
+                    logs = f.read()
+                    if "Device " in logs and " registered with version " in logs:
+                        logger.info("Application is running and connected to database")
                         return True
-            
+                
             except Exception as e:
                 logger.warning(f"Error during verification: {str(e)}")
             

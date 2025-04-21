@@ -1,0 +1,6 @@
+{
+    "server": "your_azure_sql_server.database.windows.net",
+    "database": "your_database_name",
+    "username": "your_username",
+    "password": "your_password"
+}

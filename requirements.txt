@@ -1,2 +1,2 @@
 requests>=2.25.0
-pymssql>=2.2.7
+pymssql>=2.2.5
