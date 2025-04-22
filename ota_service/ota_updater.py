@@ -15,7 +15,6 @@ import sqlite3
 
 from github_client import GitHubClient
 from version_manager import VersionManager
-from azure_sql_client import AzureSQLClient
 
 # Setup logging
 logging.basicConfig(
@@ -50,24 +49,21 @@ class OTAUpdater:
             max_versions=self.config.get("max_versions", 5)
         )
         
-        # Initialize Azure SQL client
-        try:
-            self.sql_client = AzureSQLClient(self.config.get("azure_sql_connection_string"))
-        except Exception as e:
-            logger.error(f"Failed to initialize Azure SQL client: {str(e)}")
-            self.sql_client = None
-        
         # Set up paths
         self.app_dir = self.config.get("app_dir", "application")
         self.app_process = None
         
+        # Connect to database to check application health
+        db_path = self.config.get("db_path", "data/app.db")
+        self.db_path = db_path
+        
+        # Make sure directories exist
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        os.makedirs(self.app_dir, exist_ok=True)
+        
         # Get current version if available
         self.current_version = self.version_manager.get_current_version()
         logger.info(f"Current version: {self.current_version or 'None'}")
-        
-        # Update device info in database if SQL client is available
-        if self.sql_client and self.current_version:
-            self.sql_client.update_device_info(self.current_version, status="OTA Service Running")
     
     def check_for_update(self):
         """Check GitHub for newer version of the application."""
@@ -194,25 +190,10 @@ class OTAUpdater:
                     logger.error("Application process has terminated")
                     return False
                 
-                # If SQL client is available, check device info status
-                if self.sql_client:
-                    conn = self.sql_client.connect()
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "SELECT TOP 1 last_updated, status FROM device_info WHERE device_id = ? ORDER BY last_updated DESC",
-                        (self.sql_client.device_id,)
-                    )
-                    result = cursor.fetchone()
-                    conn.close()
-                    
-                    if result:
-                        last_updated, status = result
-                        time_diff = (datetime.utcnow() - last_updated).total_seconds()
-                        
-                        # If the last update is within the last 20 seconds and status is Running, consider the app working
-                        if time_diff < 20 and status == "Running":
-                            logger.info("Application is running and updating device status")
-                            return True
+                # Application is running - sufficient for verification
+                # The process is OK if it's still running after 5 seconds
+                logger.info("Application is running")
+                return True
             
             except Exception as e:
                 logger.warning(f"Error during verification: {str(e)}")

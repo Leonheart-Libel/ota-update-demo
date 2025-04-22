@@ -1,0 +1,7 @@
+{
+    "server": "your-server-name.database.windows.net",
+    "database": "WeatherDB",
+    "username": "your-username",
+    "password": "your-password",
+    "driver": "{ODBC Driver 18 for SQL Server}"
+}

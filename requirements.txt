@@ -1,2 +1,2 @@
 requests>=2.25.0
-pyodbc>=4.0.32
+pyodbc>=4.0.30

@@ -3,8 +3,8 @@
     "repo_owner": "YOUR_GITHUB_USERNAME",
     "repo_name": "ota-update-demo",
     "app_dir": "application",
+    "db_path": "data/app.db",
     "versions_dir": "versions",
     "max_versions": 5,
-    "check_interval": 150,
-    "azure_sql_connection_string": "DRIVER={ODBC Driver 18 for SQL Server};SERVER=your-server.database.windows.net;DATABASE=your-database;UID=your-username;PWD=your-password;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
+    "check_interval": 150
 }
