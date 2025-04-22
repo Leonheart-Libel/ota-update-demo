@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Enhanced application that generates simulated environmental data and stores it in SQLite.
-This version adds weather metrics simulation and more detailed data.
+Enhanced application that generates simulated environmental data and stores it in Azure SQL Database.
+This version adds weather metrics simulation and device identification.
 """
 import os
 import time
@@ -11,7 +11,8 @@ import json
 from datetime import datetime
 import math
 import signal
-from database_manager import DatabaseManager
+
+from db_manager import DBManager  # Import the new DB Manager
 
 # Setup logging
 logging.basicConfig(
@@ -132,22 +133,25 @@ class WeatherSimulator:
 
 
 class EnhancedApplication:
-    def __init__(self, db_path="data/app.db"):
-        """Initialize the enhanced application with database connection."""
+    def __init__(self, db_config_path="db_config.json"):
+        """Initialize the enhanced application with Azure SQL database connection."""
         logger.info(f"Starting Enhanced Weather Application v{APP_VERSION}")
         
-        # Ensure data directory exists
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        
-        # Initialize database connection
-        self.db_manager = DatabaseManager()
+        # Initialize database manager
+        try:
+            self.db_manager = DBManager(db_config_path)
+            
+            # Update device with current version
+            self.db_manager.update_device_version(APP_VERSION)
+        except Exception as e:
+            logger.error(f"Failed to initialize database connection: {str(e)}")
+            raise
         
         # Initialize weather simulator
         self.weather_simulator = WeatherSimulator()
         
         # Load configuration
         self.load_config()
-        self.db_manager.register_device(APP_VERSION)
 
         # Add shutdown flag and signal handler
         self.shutdown_requested = False
@@ -157,7 +161,7 @@ class EnhancedApplication:
         """Handle graceful shutdown signal"""
         logger.info("Shutdown signal received, finishing current operation...")
         self.shutdown_requested = True
-        
+    
     def load_config(self):
         """Load application configuration"""
         self.interval = 5  # Default interval
@@ -181,7 +185,7 @@ class EnhancedApplication:
                 logger.info(f"Loaded configuration: interval={self.interval}s, extended_logging={self.enable_extended_logging}")
             except Exception as e:
                 logger.warning(f"Error loading config: {str(e)}")
-        
+    
     def generate_data(self):
         """Generate enhanced weather data with timestamp."""
         timestamp = datetime.now().isoformat()
@@ -207,20 +211,20 @@ class EnhancedApplication:
             "version": APP_VERSION
         }
         
-        # For backward compatibility
-        data["value"] = weather_data["temperature"]
-        
         return data
     
     def store_data(self, data):
         """Store enhanced data in Azure SQL database."""
-        result = self.db_manager.store_weather_data(data)
+        # Store data in the Azure SQL database
+        if self.db_manager.store_weather_data(data):
+            logger.info("Data successfully stored in Azure SQL Database")
+        else:
+            logger.error("Failed to store data in Azure SQL Database")
         
-        # Clean up old data if retention period is set - handled by SQL Server
-        # through maintenance plans or triggers if needed
-        
-        return result
-        
+        # Clean up old data if retention period is set
+        if self.data_retention_days > 0:
+            self.db_manager.clean_old_data(self.data_retention_days)
+    
     def run(self):
         """Modified run loop with shutdown handling"""
         logger.info(f"Enhanced Weather Application running with version {APP_VERSION}")
@@ -241,6 +245,8 @@ class EnhancedApplication:
         except Exception as e:
             logger.error(f"Error in application: {str(e)}")
         finally:
+            if hasattr(self, 'db_manager'):
+                self.db_manager.close()
             logger.info("Application stopped")
 
 if __name__ == "__main__":

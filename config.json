@@ -3,15 +3,8 @@
     "repo_owner": "YOUR_GITHUB_USERNAME",
     "repo_name": "ota-update-demo",
     "app_dir": "application",
+    "db_path": "data/app.db",
     "versions_dir": "versions",
     "max_versions": 5,
-    "check_interval": 150,
-    "azure_sql": {
-        "server": "your-server.database.windows.net",
-        "database": "your-database",
-        "username": "your-username",
-        "password": "your-password",
-        "driver": "{ODBC Driver 18 for SQL Server}"
-    },
-    "device_id": "iot-device-001"
+    "check_interval": 150
 }

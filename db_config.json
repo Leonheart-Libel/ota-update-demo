@@ -1,0 +1,6 @@
+{
+    "server": "your-azure-sql-server.database.windows.net",
+    "database": "iot_weather_data",
+    "username": "your_username",
+    "password": "your_password"
+}
