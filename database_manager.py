@@ -145,22 +145,32 @@ class DatabaseManager:
             
             # Insert weather data
             weather = data["weather"]
+            
+            # Log the actual SQL and parameters for debugging
+            logger.info(f"Inserting weather data for device: {self.device_id}, time: {data['timestamp']}")
+            logger.debug(f"SQL params: temperature={weather['temperature']}, humidity={weather['humidity']}")
+            
             cursor.execute(
                 """INSERT INTO weather_data 
-                   (device_id, timestamp, temperature, humidity, pressure, wind_speed, 
+                (device_id, timestamp, temperature, humidity, pressure, wind_speed, 
                     wind_direction, precipitation, condition, message, version)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (self.device_id, datetime.fromisoformat(data["timestamp"]), 
-                 weather["temperature"], weather["humidity"], weather["pressure"],
-                 weather["wind_speed"], weather["wind_direction"], weather["precipitation"],
-                 weather["condition"], data["message"], data["version"])
+                weather["temperature"], weather["humidity"], weather["pressure"],
+                weather["wind_speed"], weather["wind_direction"], weather["precipitation"],
+                weather["condition"], data["message"], data["version"])
             )
             
             conn.commit()
+            logger.info("Weather data successfully inserted into database")
             return True
             
         except Exception as e:
             logger.error(f"Error storing weather data: {str(e)}")
+            logger.error(f"Data that failed: {data}")
+            # Log the specific SQL error for ODBC
+            if hasattr(e, 'args') and len(e.args) > 0:
+                logger.error(f"SQL error details: {e.args[0]}")
             return False
     
     def get_latest_data_timestamp(self):

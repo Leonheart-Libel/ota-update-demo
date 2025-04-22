@@ -184,31 +184,40 @@ class OTAUpdater:
         logger.info("Verifying update...")
         
         # Wait a moment for the application to start
-        time.sleep(5)
+        time.sleep(10)
         
         start_time = time.time()
         while time.time() - start_time < timeout:
             try:
                 # Check if application is running
                 if self.app_process and self.app_process.poll() is not None:
-                    logger.error("Application process has terminated")
+                    logger.error(f"Application process terminated with return code: {self.app_process.poll()}")
+                    # Try to get application error output
+                    stdout, stderr = self.app_process.communicate()
+                    logger.error(f"Application stdout: {stdout.decode('utf-8', errors='ignore')}")
+                    logger.error(f"Application stderr: {stderr.decode('utf-8', errors='ignore')}")
                     return False
                 
                 # Check if application is writing to database
                 last_timestamp = self.db_manager.get_latest_data_timestamp()
+                logger.debug(f"Last database timestamp: {last_timestamp}")
                 
                 if last_timestamp:
                     now = datetime.now()
                     time_diff = (now - last_timestamp).total_seconds()
+                    logger.debug(f"Time difference: {time_diff} seconds")
                     
                     # If the last log is within the last 30 seconds, consider the app working
                     if time_diff < 30:
                         logger.info("Application is running and writing data")
                         return True
+                else:
+                    logger.warning("No database timestamp found")
             
             except Exception as e:
                 logger.warning(f"Error during verification: {str(e)}")
             
+            logger.debug("Waiting for application activity...")
             time.sleep(2)
         
         logger.error("Update verification timed out")
