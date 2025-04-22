@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Enhanced application that generates simulated environmental data and stores it in Azure SQL Database.
-This version adds weather metrics simulation and device identification.
+Enhanced application that generates simulated environmental data and stores it in SQLite.
+This version adds weather metrics simulation and more detailed data.
 """
+# Main changes to app.py - only showing modified parts
 import os
 import time
 import random
@@ -11,8 +12,10 @@ import json
 from datetime import datetime
 import math
 import signal
+import pyodbc  # Add pyodbc import
 
-from db_manager import DBManager  # Import the new DB Manager
+# Import the Azure SQL client
+from azure_sql_client import AzureSQLClient
 
 # Setup logging
 logging.basicConfig(
@@ -133,18 +136,19 @@ class WeatherSimulator:
 
 
 class EnhancedApplication:
-    def __init__(self, db_config_path="db_config.json"):
-        """Initialize the enhanced application with Azure SQL database connection."""
+    def __init__(self, connection_string=None):
+        """Initialize the enhanced application with Azure SQL connection."""
         logger.info(f"Starting Enhanced Weather Application v{APP_VERSION}")
         
-        # Initialize database manager
+        # Initialize Azure SQL Client
         try:
-            self.db_manager = DBManager(db_config_path)
+            self.sql_client = AzureSQLClient(connection_string)
+            self.sql_client.setup_database()
             
-            # Update device with current version
-            self.db_manager.update_device_version(APP_VERSION)
+            # Update device info with current version
+            self.sql_client.update_device_info(APP_VERSION)
         except Exception as e:
-            logger.error(f"Failed to initialize database connection: {str(e)}")
+            logger.error(f"Failed to initialize Azure SQL connection: {str(e)}")
             raise
         
         # Initialize weather simulator
@@ -160,8 +164,13 @@ class EnhancedApplication:
     def handle_termination(self, signum, frame):
         """Handle graceful shutdown signal"""
         logger.info("Shutdown signal received, finishing current operation...")
+        # Update device status to stopped
+        try:
+            self.sql_client.update_device_info(APP_VERSION, status="Stopped")
+        except Exception as e:
+            logger.error(f"Error updating device status during shutdown: {str(e)}")
         self.shutdown_requested = True
-    
+        
     def load_config(self):
         """Load application configuration"""
         self.interval = 5  # Default interval
@@ -185,7 +194,7 @@ class EnhancedApplication:
                 logger.info(f"Loaded configuration: interval={self.interval}s, extended_logging={self.enable_extended_logging}")
             except Exception as e:
                 logger.warning(f"Error loading config: {str(e)}")
-    
+        
     def generate_data(self):
         """Generate enhanced weather data with timestamp."""
         timestamp = datetime.now().isoformat()
@@ -211,26 +220,46 @@ class EnhancedApplication:
             "version": APP_VERSION
         }
         
+        # For backward compatibility
+        data["value"] = weather_data["temperature"]
+        
         return data
     
     def store_data(self, data):
         """Store enhanced data in Azure SQL database."""
-        # Store data in the Azure SQL database
-        if self.db_manager.store_weather_data(data):
-            logger.info("Data successfully stored in Azure SQL Database")
-        else:
-            logger.error("Failed to store data in Azure SQL Database")
-        
-        # Clean up old data if retention period is set
-        if self.data_retention_days > 0:
-            self.db_manager.clean_old_data(self.data_retention_days)
+        try:
+            conn = self.sql_client.connect()
+            cursor = conn.cursor()
+            
+            # Get the weather data
+            weather = data["weather"]
+            
+            # Store in the weather_data table
+            cursor.execute(
+                """INSERT INTO weather_data 
+                   (device_id, timestamp, temperature, humidity, pressure, wind_speed, wind_direction, 
+                    precipitation, condition, message) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (self.sql_client.device_id, data["timestamp"], weather["temperature"], weather["humidity"], 
+                 weather["pressure"], weather["wind_speed"], weather["wind_direction"],
+                 weather["precipitation"], weather["condition"], data["message"])
+            )
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            logger.error(f"Error storing data in Azure SQL: {str(e)}")
     
     def run(self):
         """Modified run loop with shutdown handling"""
         logger.info(f"Enhanced Weather Application running with version {APP_VERSION}")
         
         try:
-            while not self.shutdown_requested:  # Modified exit condition
+            # Update device info to running
+            self.sql_client.update_device_info(APP_VERSION, status="Running")
+            
+            while not self.shutdown_requested:
                 data = self.generate_data()
                 self.store_data(data)
                 
@@ -242,13 +271,15 @@ class EnhancedApplication:
                 time.sleep(self.interval)
         except KeyboardInterrupt:
             logger.info("Application shutdown requested")
+            self.sql_client.update_device_info(APP_VERSION, status="Stopped")
         except Exception as e:
             logger.error(f"Error in application: {str(e)}")
+            self.sql_client.update_device_info(APP_VERSION, status="Error")
         finally:
-            if hasattr(self, 'db_manager'):
-                self.db_manager.close()
             logger.info("Application stopped")
 
 if __name__ == "__main__":
-    app = EnhancedApplication()
+    # Get connection string from environment variable
+    connection_string = os.getenv("AZURE_SQL_CONNECTION_STRING")
+    app = EnhancedApplication(connection_string)
     app.run()
