@@ -8,6 +8,8 @@ import time
 import subprocess
 import logging
 
+VENV_PYTHON = "/home/rozemyne/ota-update-demo/myenv/bin/python"
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -27,10 +29,10 @@ def start_services():
     for directory in ["application", "ota_service", "data", "versions"]:
         os.makedirs(directory, exist_ok=True)
     
-    # Start OTA service
+    # Start OTA service using the venv Python
     logger.info("Starting OTA Update Service...")
     ota_process = subprocess.Popen(
-        [sys.executable, "ota_service/ota_updater.py"],
+        [VENV_PYTHON, "ota_updater.py"],  # Use venv Python
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
