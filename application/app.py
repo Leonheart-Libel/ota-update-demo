@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-Enhanced application that generates simulated environmental data and stores it in SQLite.
-This version adds weather metrics simulation and more detailed data.
+Enhanced application that generates simulated environmental data and stores it in Azure SQL Database.
+This version adds weather metrics simulation and device tracking capabilities.
 """
 import os
 import time
 import random
 import logging
 import json
-from datetime import datetime
+import socket
+import uuid
+import pyodbc
 import math
 import signal
-from database_manager import DatabaseManager
+from datetime import datetime
 
 # Setup logging
 logging.basicConfig(
@@ -23,7 +25,6 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("EnhancedWeatherApp")
-
 
 # App version - read from version file
 version_files = [
@@ -132,22 +133,27 @@ class WeatherSimulator:
 
 
 class EnhancedApplication:
-    def __init__(self, db_path="data/app.db"):
-        """Initialize the enhanced application with database connection."""
+    def __init__(self):
+        """Initialize the enhanced application with Azure SQL connection."""
         logger.info(f"Starting Enhanced Weather Application v{APP_VERSION}")
-        
-        # Ensure data directory exists
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        
-        # Initialize database connection
-        self.db_manager = DatabaseManager()
-        
-        # Initialize weather simulator
-        self.weather_simulator = WeatherSimulator()
         
         # Load configuration
         self.load_config()
-        self.db_manager.register_device(APP_VERSION)
+        
+        # Initialize device ID management
+        self.initialize_device_id()
+        
+        # Connect to Azure SQL database
+        self.conn = self.create_db_connection()
+        
+        # Setup database if needed
+        self._ensure_tables_exist()
+        
+        # Register or update device info
+        self.register_device()
+        
+        # Initialize weather simulator
+        self.weather_simulator = WeatherSimulator()
 
         # Add shutdown flag and signal handler
         self.shutdown_requested = False
@@ -157,26 +163,206 @@ class EnhancedApplication:
         """Handle graceful shutdown signal"""
         logger.info("Shutdown signal received, finishing current operation...")
         self.shutdown_requested = True
+    
+    def initialize_device_id(self):
+        """Generate or load a unique device ID"""
+        device_id_file = "data/device_id.txt"
+        os.makedirs(os.path.dirname(device_id_file), exist_ok=True)
         
+        if os.path.exists(device_id_file):
+            try:
+                with open(device_id_file, "r") as f:
+                    self.device_id = f.read().strip()
+                    logger.info(f"Loaded existing device ID: {self.device_id}")
+            except Exception as e:
+                logger.error(f"Error reading device ID: {str(e)}")
+                self.device_id = self.generate_device_id()
+        else:
+            self.device_id = self.generate_device_id()
+            try:
+                with open(device_id_file, "w") as f:
+                    f.write(self.device_id)
+                logger.info(f"Generated and saved new device ID: {self.device_id}")
+            except Exception as e:
+                logger.error(f"Error saving device ID: {str(e)}")
+    
+    def generate_device_id(self):
+        """Generate a unique device ID based on hostname and a UUID"""
+        hostname = socket.gethostname()
+        unique_id = str(uuid.uuid4())[:8]
+        device_id = f"{hostname}-{unique_id}"
+        return device_id
+    
+    def create_db_connection(self):
+        """Create a connection to Azure SQL Database"""
+        try:
+            conn_string = (
+                f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+                f"SERVER={self.sql_server};"
+                f"DATABASE={self.sql_database};"
+                f"UID={self.sql_username};"
+                f"PWD={self.sql_password};"
+                f"Encrypt=yes;TrustServerCertificate={self.trust_server_cert};"
+            )
+            
+            conn = pyodbc.connect(conn_string)
+            logger.info("Successfully connected to Azure SQL Database")
+            return conn
+        except Exception as e:
+            logger.error(f"Error connecting to database: {str(e)}")
+            raise
+    
+    def _ensure_tables_exist(self):
+        """Check if required tables exist, create them if they don't"""
+        try:
+            cursor = self.conn.cursor()
+            
+            # Check if tables exist
+            cursor.execute("""
+                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'device_info')
+                CREATE TABLE device_info (
+                    device_id VARCHAR(50) PRIMARY KEY,
+                    hostname VARCHAR(100),
+                    ip_address VARCHAR(50),
+                    first_seen DATETIME2 NOT NULL,
+                    last_seen DATETIME2 NOT NULL,
+                    current_version VARCHAR(20),
+                    os_info VARCHAR(255),
+                    status VARCHAR(20) DEFAULT 'active'
+                )
+            """)
+            
+            cursor.execute("""
+                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'weather_data')
+                CREATE TABLE weather_data (
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    device_id VARCHAR(50) NOT NULL,
+                    timestamp DATETIME2 NOT NULL,
+                    temperature FLOAT,
+                    humidity FLOAT,
+                    pressure FLOAT,
+                    wind_speed FLOAT,
+                    wind_direction FLOAT,
+                    precipitation FLOAT,
+                    condition VARCHAR(50),
+                    message NVARCHAR(500),
+                    version VARCHAR(20)
+                )
+            """)
+            
+            # Create indexes if they don't exist
+            cursor.execute("""
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_weather_data_timestamp')
+                CREATE INDEX IX_weather_data_timestamp ON weather_data (timestamp)
+            """)
+            
+            cursor.execute("""
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_weather_data_device_id')
+                CREATE INDEX IX_weather_data_device_id ON weather_data (device_id)
+            """)
+            
+            cursor.execute("""
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_device_info_last_seen')
+                CREATE INDEX IX_device_info_last_seen ON device_info (last_seen)
+            """)
+            
+            self.conn.commit()
+            logger.info("Database schema verified/created successfully")
+        except Exception as e:
+            logger.error(f"Error ensuring tables exist: {str(e)}")
+            raise
+    
+    def register_device(self):
+        """Register this device or update its information in the database"""
+        try:
+            cursor = self.conn.cursor()
+            
+            # Get device information
+            hostname = socket.gethostname()
+            try:
+                ip_address = socket.gethostbyname(hostname)
+            except:
+                ip_address = "unknown"
+                
+            import platform
+            os_info = f"{platform.system()} {platform.release()}"
+            current_time = datetime.now()
+            
+            # Check if device already exists
+            cursor.execute("SELECT device_id FROM device_info WHERE device_id = ?", (self.device_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                # Update existing device
+                cursor.execute("""
+                    UPDATE device_info 
+                    SET hostname = ?, ip_address = ?, last_seen = ?, 
+                        current_version = ?, os_info = ?, status = 'active'
+                    WHERE device_id = ?
+                """, (hostname, ip_address, current_time, APP_VERSION, os_info, self.device_id))
+                logger.info(f"Updated device info for {self.device_id}")
+            else:
+                # Register new device
+                cursor.execute("""
+                    INSERT INTO device_info 
+                    (device_id, hostname, ip_address, first_seen, last_seen, current_version, os_info, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
+                """, (self.device_id, hostname, ip_address, current_time, current_time, APP_VERSION, os_info))
+                logger.info(f"Registered new device with ID: {self.device_id}")
+            
+            self.conn.commit()
+        except Exception as e:
+            logger.error(f"Error registering device: {str(e)}")
+            # Don't raise here to allow application to continue working even if registration fails
+    
     def load_config(self):
         """Load application configuration"""
+        # Default values
         self.interval = 5  # Default interval
         self.enable_extended_logging = True  # Default extended logging
         self.data_retention_days = 30  # Default data retention
         
+        # Default SQL connection parameters
+        self.sql_server = "your-server.database.windows.net"
+        self.sql_database = "IotWeatherData"
+        self.sql_username = "your_username"
+        self.sql_password = "your_password"
+        self.trust_server_cert = "no"
+        
+        # Load from configuration file
         config_path = "application/app_config.py"
         
         if os.path.exists(config_path):
             try:
                 with open(config_path, 'r') as f:
                     for line in f:
-                        if line.startswith("INTERVAL"):
-                            self.interval = int(line.split("=")[1].strip())
-                        elif line.startswith("ENABLE_EXTENDED_LOGGING"):
-                            value = line.split("=")[1].strip()
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                            
+                        if "=" not in line:
+                            continue
+                            
+                        key, value = line.split("=", 1)
+                        key = key.strip()
+                        value = value.strip().strip('"\'')
+                        
+                        if key == "INTERVAL":
+                            self.interval = int(value)
+                        elif key == "ENABLE_EXTENDED_LOGGING":
                             self.enable_extended_logging = value.lower() == "true"
-                        elif line.startswith("DATA_RETENTION_DAYS"):
-                            self.data_retention_days = int(line.split("=")[1].strip())
+                        elif key == "DATA_RETENTION_DAYS":
+                            self.data_retention_days = int(value)
+                        elif key == "SQL_SERVER":
+                            self.sql_server = value
+                        elif key == "SQL_DATABASE":
+                            self.sql_database = value
+                        elif key == "SQL_USERNAME":
+                            self.sql_username = value
+                        elif key == "SQL_PASSWORD":
+                            self.sql_password = value
+                        elif key == "TRUST_SERVER_CERT":
+                            self.trust_server_cert = value
                             
                 logger.info(f"Loaded configuration: interval={self.interval}s, extended_logging={self.enable_extended_logging}")
             except Exception as e:
@@ -184,7 +370,7 @@ class EnhancedApplication:
         
     def generate_data(self):
         """Generate enhanced weather data with timestamp."""
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now()
         
         # Get simulated weather data
         weather_data = self.weather_simulator.update()
@@ -204,22 +390,96 @@ class EnhancedApplication:
             "timestamp": timestamp,
             "weather": weather_data,
             "message": message,
-            "version": APP_VERSION
+            "version": APP_VERSION,
+            "device_id": self.device_id
         }
-        
-        # For backward compatibility
-        data["value"] = weather_data["temperature"]
         
         return data
     
     def store_data(self, data):
         """Store enhanced data in Azure SQL database."""
-        result = self.db_manager.store_weather_data(data)
-        
-        # Clean up old data if retention period is set - handled by SQL Server
-        # through maintenance plans or triggers if needed
-        
-        return result
+        try:
+            cursor = self.conn.cursor()
+            
+            # Store weather data
+            weather = data["weather"]
+            cursor.execute("""
+                INSERT INTO weather_data 
+                (device_id, timestamp, temperature, humidity, pressure, wind_speed, 
+                wind_direction, precipitation, condition, message, version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                data["device_id"],
+                data["timestamp"],
+                weather["temperature"],
+                weather["humidity"],
+                weather["pressure"],
+                weather["wind_speed"],
+                weather["wind_direction"],
+                weather["precipitation"],
+                weather["condition"],
+                data["message"],
+                data["version"]
+            ))
+            
+            # Update device last seen timestamp
+            cursor.execute("""
+                UPDATE device_info 
+                SET last_seen = ?, current_version = ?
+                WHERE device_id = ?
+            """, (data["timestamp"], data["version"], data["device_id"]))
+            
+            self.conn.commit()
+            
+            # Clean up old data if retention period is set
+            if self.data_retention_days > 0:
+                try:
+                    cutoff_date = datetime.now().replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
+                    
+                    # Calculate cutoff date by subtracting days
+                    import datetime as dt
+                    cutoff_date = cutoff_date - dt.timedelta(days=self.data_retention_days)
+                    
+                    cursor.execute(
+                        "DELETE FROM weather_data WHERE timestamp < ?", 
+                        (cutoff_date,)
+                    )
+                    self.conn.commit()
+                except Exception as e:
+                    logger.error(f"Error cleaning up old data: {str(e)}")
+            
+        except Exception as e:
+            logger.error(f"Error storing data: {str(e)}")
+            # Try to reconnect and retry once
+            try:
+                self.conn = self.create_db_connection()
+                # If reconnected successfully, retry the insert
+                cursor = self.conn.cursor()
+                weather = data["weather"]
+                cursor.execute("""
+                    INSERT INTO weather_data 
+                    (device_id, timestamp, temperature, humidity, pressure, wind_speed, 
+                    wind_direction, precipitation, condition, message, version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    data["device_id"],
+                    data["timestamp"],
+                    weather["temperature"],
+                    weather["humidity"],
+                    weather["pressure"],
+                    weather["wind_speed"],
+                    weather["wind_direction"],
+                    weather["precipitation"],
+                    weather["condition"],
+                    data["message"],
+                    data["version"]
+                ))
+                self.conn.commit()
+                logger.info("Successfully reconnected and stored data")
+            except Exception as retry_error:
+                logger.error(f"Failed to store data after reconnection attempt: {str(retry_error)}")
         
     def run(self):
         """Modified run loop with shutdown handling"""
@@ -241,6 +501,8 @@ class EnhancedApplication:
         except Exception as e:
             logger.error(f"Error in application: {str(e)}")
         finally:
+            if hasattr(self, 'conn') and self.conn:
+                self.conn.close()
             logger.info("Application stopped")
 
 if __name__ == "__main__":
