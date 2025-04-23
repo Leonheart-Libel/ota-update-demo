@@ -2,7 +2,7 @@
 # This file is updated by the OTA service
 
 # Data generation interval in seconds
-INTERVAL = 10
+INTERVAL = 15
 
 # Enable extended logging (more detailed output)
 ENABLE_EXTENDED_LOGGING = True
@@ -11,10 +11,10 @@ ENABLE_EXTENDED_LOGGING = True
 DATA_RETENTION_DAYS = 30
 
 # Azure SQL Database connection parameters
-SQL_SERVER = "your-server.database.windows.net"
-SQL_DATABASE = "IotWeatherData"
-SQL_USERNAME = "your_username"
-SQL_PASSWORD = "your_password"
+SQL_SERVER = "iotcentralhub.database.windows.net"
+SQL_DATABASE = "otasqldb"
+SQL_USERNAME = "rozemyne"
+SQL_PASSWORD = "alexandria_7"
 TRUST_SERVER_CERT = "no"
 
 # Additional configuration parameters can be added here
