@@ -61,12 +61,6 @@ class WeatherSimulator:
         self.base_wind_direction = random.uniform(0, 360)   # Degrees
         self.base_precipitation = random.uniform(0, 5.0)    # mm
         
-        self.app = config
-        # Add new metrics
-        self.base_uv_index = random.uniform(0.0, 3.0)
-        self.base_visibility = random.uniform(2.0, 10.0)  # km
-        self.wind_gust = 0.0
-        
         # Time counters for oscillation
         self.time_counter = 0
         
@@ -107,27 +101,6 @@ class WeatherSimulator:
         wind_speed_variation = math.sin(self.time_counter / 8) * 2 + random.uniform(-1, 1)
         wind_dir_variation = random.uniform(-10, 10)
         precip_variation = 0
-
-        # Add new simulated metrics
-        uv_variation = math.sin(self.time_counter / 15) * 0.5
-        visibility_variation = math.cos(self.time_counter / 20) * 1.0
-        
-        # Calculate new metrics
-        uv_index = max(0, self.base_uv_index + uv_variation)
-        visibility = max(0.1, self.base_visibility + visibility_variation)
-        
-        # Calculate feels-like temperature (wind chill or heat index)
-        feels_like = temperature
-        if self.app.enable_feels_like:
-            if temperature < 10:
-                feels_like = 13.12 + 0.6215*temperature - 11.37*(wind_speed**0.16) + 0.3965*temperature*(wind_speed**0.16)
-            elif temperature > 27:
-                feels_like = temperature + 0.5 * humidity/100
-        
-        # Add wind gusts
-        if self.app.max_wind_gust > 0:
-            self.wind_gust = random.uniform(0, self.config["MAX_WIND_GUST"])
-            weather["wind_speed"] += self.wind_gust
         
         # Add precipitation based on condition
         if "Rain" in self.current_condition or "Snow" in self.current_condition:
@@ -155,12 +128,7 @@ class WeatherSimulator:
             "wind_speed": round(wind_speed, 1),
             "wind_direction": round(wind_direction, 1),
             "precipitation": round(precipitation, 2),
-            "condition": self.current_condition,
-            # New metrics stored in message
-            "uv_index": round(uv_index, 1),
-            "visibility": round(visibility, 1),
-            "feels_like": round(feels_like, 1),
-            "wind_gust": round(self.wind_gust, 1)
+            "condition": self.current_condition
         }
 
 
@@ -185,7 +153,7 @@ class EnhancedApplication:
         self.register_device()
         
         # Initialize weather simulator
-        self.weather_simulator = WeatherSimulator(self)
+        self.weather_simulator = WeatherSimulator()
 
         # Add shutdown flag and signal handler
         self.shutdown_requested = False
@@ -349,7 +317,7 @@ class EnhancedApplication:
     
     def load_config(self):
         """Load application configuration"""
-        # Default values
+        # Default values for app configuration
         self.interval = 5  # Default interval
         self.enable_extended_logging = True  # Default extended logging
         self.data_retention_days = 30  # Default data retention
@@ -361,12 +329,43 @@ class EnhancedApplication:
         self.sql_password = "your_password"
         self.trust_server_cert = "no"
         
-        # Load from configuration file
-        config_path = "application/app_config.py"
+        # First, try to load SQL parameters from config.json (new approach)
+        config_paths = [
+            "config.json",               # Path relative to project root
+            "../config.json",            # Path if running from application directory
+            "../../config.json"          # Another possible path
+        ]
         
-        if os.path.exists(config_path):
+        config_loaded = False
+        for config_path in config_paths:
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+                        
+                        # Get SQL parameters from config.json
+                        if "azure_sql" in config:
+                            sql_config = config["azure_sql"]
+                            self.sql_server = sql_config.get("server", self.sql_server)
+                            self.sql_database = sql_config.get("database", self.sql_database)
+                            self.sql_username = sql_config.get("username", self.sql_username)
+                            self.sql_password = sql_config.get("password", self.sql_password)
+                            self.trust_server_cert = sql_config.get("trust_server_cert", self.trust_server_cert)
+                            config_loaded = True
+                            logger.info(f"Loaded SQL configuration from {config_path}")
+                    
+                    if config_loaded:
+                        break
+                        
+                except Exception as e:
+                    logger.warning(f"Error loading config.json: {str(e)}")
+        
+        # Load app-specific configuration from app_config.py (keep this for backward compatibility)
+        app_config_path = "application/app_config.py"
+        
+        if os.path.exists(app_config_path):
             try:
-                with open(config_path, 'r') as f:
+                with open(app_config_path, 'r') as f:
                     for line in f:
                         line = line.strip()
                         if not line or line.startswith("#"):
@@ -385,26 +384,23 @@ class EnhancedApplication:
                             self.enable_extended_logging = value.lower() == "true"
                         elif key == "DATA_RETENTION_DAYS":
                             self.data_retention_days = int(value)
-                        elif key == "SQL_SERVER":
-                            self.sql_server = value
-                        elif key == "SQL_DATABASE":
-                            self.sql_database = value
-                        elif key == "SQL_USERNAME":
-                            self.sql_username = value
-                        elif key == "SQL_PASSWORD":
-                            self.sql_password = value
-                        elif key == "TRUST_SERVER_CERT":
-                            self.trust_server_cert = value
-                        elif key == "ENABLE_UV_SIMULATION":
-                            self.enable_uv_simulation = value.lower() == "true"
-                        elif key == "ENABLE_FEELS_LIKE":
-                            self.enable_feels_like = value.lower() == "true"
-                        elif key == "MAX_WIND_GUST":
-                            self.max_wind_gust = float(value)
+                        
+                        # Only read SQL parameters from app_config.py if not already loaded from config.json
+                        if not config_loaded:
+                            if key == "SQL_SERVER":
+                                self.sql_server = value
+                            elif key == "SQL_DATABASE":
+                                self.sql_database = value
+                            elif key == "SQL_USERNAME":
+                                self.sql_username = value
+                            elif key == "SQL_PASSWORD":
+                                self.sql_password = value
+                            elif key == "TRUST_SERVER_CERT":
+                                self.trust_server_cert = value
                             
-                logger.info(f"Loaded configuration: interval={self.interval}s, extended_logging={self.enable_extended_logging}")
+                logger.info(f"Loaded application configuration: interval={self.interval}s, extended_logging={self.enable_extended_logging}")
             except Exception as e:
-                logger.warning(f"Error loading config: {str(e)}")
+                logger.warning(f"Error loading app_config.py: {str(e)}")
         
     def generate_data(self):
         """Generate enhanced weather data with timestamp."""
@@ -414,21 +410,20 @@ class EnhancedApplication:
         weather_data = self.weather_simulator.update()
         
         # Generate a meaningful message based on the weather condition
-        message_parts = [
-        f"Condition: {weather_data['condition']}",
-        f"Temp: {weather_data['temperature']}°C (Feels like: {weather_data['feels_like']}°C)",
-        f"Wind: {weather_data['wind_speed']}km/h (Gusts: {weather_data['wind_gust']}km/h)",
-        f"UV Index: {weather_data['uv_index']}",
-        f"Visibility: {weather_data['visibility']}km"
-    ]
+        condition = weather_data["condition"]
+        temp = weather_data["temperature"]
         
-        if weather_data['precipitation'] > 0:
-            message_parts.append(f"Precip: {weather_data['precipitation']}mm")
+        message = f"Current weather: {condition} at {temp}°C"
+        if "Rain" in condition:
+            message += f", precipitation: {weather_data['precipitation']}mm"
+        if weather_data["wind_speed"] > 20:
+            message += f", strong winds: {weather_data['wind_speed']}km/h"
         
+        # Create complete data record
         data = {
             "timestamp": timestamp,
             "weather": weather_data,
-            "message": " | ".join(message_parts),
+            "message": message,
             "version": APP_VERSION,
             "device_id": self.device_id
         }
