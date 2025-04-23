@@ -181,99 +181,36 @@ class OTAUpdater:
         # Wait a moment for the application to start
         time.sleep(5)
         
-        # Get device_id from config
-        device_id = self.config.get("device_id", None)
-        if not device_id:
-            # Try to generate same device ID as app would
-            device_id = f"iot-{socket.gethostname()}"
-        
-        # Connect to Azure SQL to verify data
-        try:
-            azure_config = self.config.get("azure_sql", {})
-            if not all([
-                azure_config.get("server"),
-                azure_config.get("database"),
-                azure_config.get("username"),
-                azure_config.get("password")
-            ]):
-                # Fall back to SQLite verification if Azure credentials not available
-                return self._verify_with_sqlite(timeout)
-            
-            # Connect to Azure SQL
-            connection_string = (
-                f"Driver={{ODBC Driver 18 for SQL Server}};"
-                f"Server={azure_config.get('server')};"
-                f"Database={azure_config.get('database')};"
-                f"Uid={azure_config.get('username')};"
-                f"Pwd={azure_config.get('password')};"
-                f"Encrypt=yes;"
-                f"TrustServerCertificate=no;"
-                f"Connection Timeout=30;"
-            )
-            
-            start_time = time.time()
-            verified = False
-            
-            while time.time() - start_time < timeout and not verified:
-                try:
-                    # Check if application is running
-                    if self.app_process and self.app_process.poll() is not None:
-                        logger.error("Application process has terminated")
-                        return False
-                    
-                    # Check if application is writing to Azure SQL
-                    conn = pyodbc.connect(connection_string)
-                    cursor = conn.cursor()
-                    
-                    # Query device_info table
-                    cursor.execute(
-                        "SELECT app_version, last_seen FROM device_info WHERE device_id = ?", 
-                        (device_id,)
-                    )
-                    device_info = cursor.fetchone()
-                    
-                    if device_info:
-                        version, last_seen = device_info
-                        last_time = datetime.fromisoformat(last_seen)
-                        now = datetime.now()
-                        time_diff = (now - last_time).total_seconds()
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                # Check if application is running
+                if self.app_process and self.app_process.poll() is not None:
+                    logger.error("Application process has terminated")
+                    return False
+                
+                # Check application log file for successful database connection
+                log_file = "application/app.log"
+                if os.path.exists(log_file):
+                    with open(log_file, 'r') as f:
+                        log_content = f.read()
                         
-                        # If the device has been seen in the last minute with correct version
-                        if time_diff < 60 and version == update_info["version"]:
-                            logger.info("Application is running and connected to Azure SQL")
-                            verified = True
-                    
-                    # Query weather_data table as backup
-                    if not verified:
-                        cursor.execute(
-                            "SELECT TOP 1 timestamp FROM weather_data WHERE device_id = ? ORDER BY timestamp DESC", 
-                            (device_id,)
-                        )
-                        latest = cursor.fetchone()
-                        
-                        if latest:
-                            last_time = datetime.fromisoformat(latest[0])
-                            now = datetime.now()
-                            time_diff = (now - last_time).total_seconds()
+                        # Look for successful database operations
+                        if "Successfully connected to Azure SQL Database" in log_content:
+                            recent_log = log_content[-5000:]  # Check the last 5000 chars
                             
-                            # If data was written in the last minute
-                            if time_diff < 60:
-                                logger.info("Application is writing data to Azure SQL")
-                                verified = True
-                    
-                    conn.close()
+                            # Check if there are any recent data storage operations
+                            if "Data stored:" in recent_log or "Weather data stored:" in recent_log:
+                                logger.info("Application is running and connecting to Azure SQL")
+                                return True
                 
-                except Exception as e:
-                    logger.warning(f"Error during verification with Azure SQL: {str(e)}")
-                
-                if not verified:
-                    time.sleep(2)
+            except Exception as e:
+                logger.warning(f"Error during verification: {str(e)}")
             
-            return verified
+            time.sleep(2)
         
-        except Exception as e:
-            logger.error(f"Azure SQL verification failed, falling back to SQLite: {str(e)}")
-            return False
+        logger.error("Update verification timed out")
+        return False
     
     def stop_application(self):
         """Modified graceful shutdown"""

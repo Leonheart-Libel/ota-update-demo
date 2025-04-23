@@ -6,12 +6,5 @@
     "db_path": "data/app.db",
     "versions_dir": "versions",
     "max_versions": 5,
-    "check_interval": 150,
-    "azure_sql": {
-        "server": "your-server.database.windows.net",
-        "database": "your-database",
-        "username": "your-username",
-        "password": "your-password"
-    },
-    "device_id": "iot-device-001" 
+    "check_interval": 150
 }
