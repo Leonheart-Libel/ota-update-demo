@@ -8,4 +8,7 @@ INTERVAL = 30
 ENABLE_EXTENDED_LOGGING = True
 
 # Data retention period in days (0 = keep indefinitely)
-DATA_RETENTION_DAYS = 30
+DATA_RETENTION_DAYS = 45
+
+# NEW: Air quality warning threshold (AQI values above this will trigger alerts)
+AIR_QUALITY_WARNING_THRESHOLD = 100
