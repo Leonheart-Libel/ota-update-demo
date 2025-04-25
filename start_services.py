@@ -8,6 +8,10 @@ import time
 import subprocess
 import logging
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+APP_DIR = os.path.join(BASE_DIR, "application")
+OTA_DIR = os.path.join(BASE_DIR, "ota_service")
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,

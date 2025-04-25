@@ -2,7 +2,6 @@
 """
 Enhanced application that generates simulated environmental data and stores it in Azure SQL Database.
 This version adds weather metrics simulation and device tracking capabilities.
-Version 3.0.0: Added Air Quality monitoring and improved weather data visualization.
 """
 import os
 import time
@@ -34,7 +33,7 @@ version_files = [
     "../application/version.txt"  # Another possible path
 ]
 
-APP_VERSION = "3.0.0"  # Updated version number
+APP_VERSION = "1.0.0"  # Default fallback version
 for version_file in version_files:
     try:
         if os.path.exists(version_file):
@@ -62,9 +61,6 @@ class WeatherSimulator:
         self.base_wind_direction = random.uniform(0, 360)   # Degrees
         self.base_precipitation = random.uniform(0, 5.0)    # mm
         
-        # NEW: Add base air quality (AQI)
-        self.base_air_quality = random.uniform(30.0, 70.0)  # AQI
-        
         # Time counters for oscillation
         self.time_counter = 0
         
@@ -78,27 +74,6 @@ class WeatherSimulator:
         self.current_condition = random.choice(self.weather_conditions)
         self.condition_duration = random.randint(5, 20)  # Duration in cycles
         self.condition_counter = 0
-        
-        # NEW: Air quality categories
-        self.air_quality_categories = [
-            "Good", "Moderate", "Unhealthy for Sensitive Groups", 
-            "Unhealthy", "Very Unhealthy", "Hazardous"
-        ]
-    
-    def get_air_quality_category(self, aqi):
-        """NEW: Determine air quality category based on AQI value"""
-        if aqi <= 50:
-            return self.air_quality_categories[0]  # Good
-        elif aqi <= 100:
-            return self.air_quality_categories[1]  # Moderate
-        elif aqi <= 150:
-            return self.air_quality_categories[2]  # Unhealthy for Sensitive Groups
-        elif aqi <= 200:
-            return self.air_quality_categories[3]  # Unhealthy
-        elif aqi <= 300:
-            return self.air_quality_categories[4]  # Very Unhealthy
-        else:
-            return self.air_quality_categories[5]  # Hazardous
     
     def update(self):
         """Update weather values with realistic variations"""
@@ -127,9 +102,6 @@ class WeatherSimulator:
         wind_dir_variation = random.uniform(-10, 10)
         precip_variation = 0
         
-        # NEW: Calculate air quality variation
-        air_quality_variation = math.sin(self.time_counter / 20) * 10 + random.uniform(-5, 5)
-        
         # Add precipitation based on condition
         if "Rain" in self.current_condition or "Snow" in self.current_condition:
             intensity = 1
@@ -139,13 +111,6 @@ class WeatherSimulator:
                 intensity = 2
             
             precip_variation = random.uniform(0, 2) * intensity
-            
-            # NEW: Air quality tends to improve during precipitation (washing effect)
-            air_quality_variation -= intensity * 3
-        
-        # NEW: Air quality worsens in foggy conditions
-        if "Foggy" in self.current_condition:
-            air_quality_variation += random.uniform(5, 15)
         
         # Update values with variations
         temperature = self.base_temperature + temp_variation
@@ -155,10 +120,6 @@ class WeatherSimulator:
         wind_direction = (self.base_wind_direction + wind_dir_variation) % 360
         precipitation = max(0, self.base_precipitation + precip_variation)
         
-        # NEW: Calculate air quality
-        air_quality = max(0, min(300, self.base_air_quality + air_quality_variation))
-        air_quality_category = self.get_air_quality_category(air_quality)
-        
         # Return weather data
         return {
             "temperature": round(temperature, 1),
@@ -167,9 +128,7 @@ class WeatherSimulator:
             "wind_speed": round(wind_speed, 1),
             "wind_direction": round(wind_direction, 1),
             "precipitation": round(precipitation, 2),
-            "condition": self.current_condition,
-            "air_quality": round(air_quality, 1),  # NEW
-            "air_quality_category": air_quality_category  # NEW
+            "condition": self.current_condition
         }
 
 
@@ -199,10 +158,11 @@ class EnhancedApplication:
         # Add shutdown flag and signal handler
         self.shutdown_requested = False
         signal.signal(signal.SIGTERM, self.handle_termination)
+        signal.signal(signal.SIGINT, self.handle_termination)
     
     def handle_termination(self, signum, frame):
         """Handle graceful shutdown signal"""
-        logger.info("Shutdown signal received, finishing current operation...")
+        logger.info(f"Shutdown signal {signum} received, finishing current operation...")
         self.shutdown_requested = True
     
     def initialize_device_id(self):
@@ -237,13 +197,15 @@ class EnhancedApplication:
     def create_db_connection(self):
         """Create a connection to Azure SQL Database"""
         try:
+            # Modified for Raspberry Pi - using FreeTDS driver instead
             conn_string = (
-                f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+                f"DRIVER={{FreeTDS}};"
                 f"SERVER={self.sql_server};"
                 f"DATABASE={self.sql_database};"
                 f"UID={self.sql_username};"
                 f"PWD={self.sql_password};"
-                f"Encrypt=yes;TrustServerCertificate={self.trust_server_cert};"
+                f"TDS_Version=8.0;"
+                f"Port=1433;"
             )
             
             conn = pyodbc.connect(conn_string)
@@ -273,13 +235,6 @@ class EnhancedApplication:
                 )
             """)
             
-            # MODIFIED: Add air_quality and air_quality_category columns to weather_data table
-            cursor.execute("""
-                IF EXISTS (SELECT * FROM sys.tables WHERE name = 'weather_data')
-                AND NOT EXISTS (SELECT * FROM sys.columns WHERE name = 'air_quality' AND object_id = OBJECT_ID('weather_data'))
-                ALTER TABLE weather_data ADD air_quality FLOAT, air_quality_category VARCHAR(50)
-            """)
-            
             cursor.execute("""
                 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'weather_data')
                 CREATE TABLE weather_data (
@@ -293,8 +248,6 @@ class EnhancedApplication:
                     wind_direction FLOAT,
                     precipitation FLOAT,
                     condition VARCHAR(50),
-                    air_quality FLOAT,
-                    air_quality_category VARCHAR(50),
                     message NVARCHAR(500),
                     version VARCHAR(20)
                 )
@@ -459,14 +412,11 @@ class EnhancedApplication:
         # Get simulated weather data
         weather_data = self.weather_simulator.update()
         
-        # MODIFIED: Generate a meaningful message based on weather + air quality
+        # Generate a meaningful message based on the weather condition
         condition = weather_data["condition"]
         temp = weather_data["temperature"]
-        air_quality = weather_data["air_quality"]
-        air_quality_category = weather_data["air_quality_category"]
         
-        # NEW: Enhanced message format with air quality
-        message = f"Current weather: {condition} at {temp}°C, Air Quality: {air_quality_category} ({air_quality})"
+        message = f"Current weather: {condition} at {temp}°C"
         if "Rain" in condition:
             message += f", precipitation: {weather_data['precipitation']}mm"
         if weather_data["wind_speed"] > 20:
@@ -488,13 +438,13 @@ class EnhancedApplication:
         try:
             cursor = self.conn.cursor()
             
-            # MODIFIED: Store weather data with air quality
+            # Store weather data
             weather = data["weather"]
             cursor.execute("""
                 INSERT INTO weather_data 
                 (device_id, timestamp, temperature, humidity, pressure, wind_speed, 
-                wind_direction, precipitation, condition, air_quality, air_quality_category, message, version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                wind_direction, precipitation, condition, message, version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 data["device_id"],
                 data["timestamp"],
@@ -505,8 +455,6 @@ class EnhancedApplication:
                 weather["wind_direction"],
                 weather["precipitation"],
                 weather["condition"],
-                weather.get("air_quality", 0),  # Handle older versions without air quality
-                weather.get("air_quality_category", "Unknown"),  # Handle older versions
                 data["message"],
                 data["version"]
             ))
@@ -550,8 +498,8 @@ class EnhancedApplication:
                 cursor.execute("""
                     INSERT INTO weather_data 
                     (device_id, timestamp, temperature, humidity, pressure, wind_speed, 
-                    wind_direction, precipitation, condition, air_quality, air_quality_category, message, version)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    wind_direction, precipitation, condition, message, version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data["device_id"],
                     data["timestamp"],
@@ -562,8 +510,6 @@ class EnhancedApplication:
                     weather["wind_direction"],
                     weather["precipitation"],
                     weather["condition"],
-                    weather.get("air_quality", 0),
-                    weather.get("air_quality_category", "Unknown"),
                     data["message"],
                     data["version"]
                 ))
