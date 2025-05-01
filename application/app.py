@@ -199,11 +199,10 @@ class EnhancedApplication:
         # Add shutdown flag and signal handler
         self.shutdown_requested = False
         signal.signal(signal.SIGTERM, self.handle_termination)
-        signal.signal(signal.SIGINT, self.handle_termination)  # Add SIGINT handling
     
     def handle_termination(self, signum, frame):
         """Handle graceful shutdown signal"""
-        logger.info(f"Shutdown signal {signum} received, finishing current operation...")
+        logger.info("Shutdown signal received, finishing current operation...")
         self.shutdown_requested = True
     
     def initialize_device_id(self):
@@ -238,15 +237,13 @@ class EnhancedApplication:
     def create_db_connection(self):
         """Create a connection to Azure SQL Database"""
         try:
-            # Modified for Raspberry Pi - using FreeTDS driver instead
             conn_string = (
-                f"DRIVER={{FreeTDS}};"
+                f"DRIVER={{ODBC Driver 18 for SQL Server}};"
                 f"SERVER={self.sql_server};"
                 f"DATABASE={self.sql_database};"
                 f"UID={self.sql_username};"
                 f"PWD={self.sql_password};"
-                f"TDS_Version=8.0;"
-                f"Port=1433;"
+                f"Encrypt=yes;TrustServerCertificate={self.trust_server_cert};"
             )
             
             conn = pyodbc.connect(conn_string)
