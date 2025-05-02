@@ -134,6 +134,37 @@ class EnhancedApplication:
         signal.signal(signal.SIGTERM, self.handle_termination)
         signal.signal(signal.SIGINT, self.handle_termination)
     
+    def ensure_single_instance():
+        """Ensure only one instance of the application is running."""
+        lock_file = "/tmp/weather_app.lock"
+        
+        try:
+            # Try to create a lock file
+            with open(lock_file, 'x') as f:
+                f.write(str(os.getpid()))
+            
+            # Register cleanup on exit
+            import atexit
+            atexit.register(lambda: os.remove(lock_file) if os.path.exists(lock_file) else None)
+            return True
+        except FileExistsError:
+            # Lock file exists, check if process is still running
+            try:
+                with open(lock_file, 'r') as f:
+                    pid = int(f.read().strip())
+                
+                # Check if process still exists
+                os.kill(pid, 0)  # This will raise an exception if process doesn't exist
+                logger.warning(f"Another instance is already running with PID {pid}")
+                return False
+            except (ProcessLookupError, ValueError):
+                # Process doesn't exist, we can take over
+                os.remove(lock_file)
+                return ensure_single_instance()
+            except PermissionError:
+                logger.error("Cannot check existing process, insufficient permissions")
+                return False
+    
     def handle_termination(self, signum, frame):
         logger.info(f"Shutdown signal {signum} received, finishing current operation...")
         self.shutdown_requested = True
