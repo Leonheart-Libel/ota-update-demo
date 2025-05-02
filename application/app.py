@@ -515,5 +515,8 @@ class EnhancedApplication:
             logger.info("Application stopped")
 
 if __name__ == "__main__":
-    app = EnhancedApplication()
-    app.run()
+    if ensure_single_instance():
+        app = EnhancedApplication()
+        app.run()
+    else:
+        logger.info("Exiting: Another instance is already running")
