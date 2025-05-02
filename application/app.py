@@ -156,10 +156,10 @@ class WeatherSimulator:
         if "Foggy" in self.current_condition:
             air_quality_variation += random.uniform(5, 15)
         
-        tempature = self.base_temperature + temp_variation
-        huidity = min(100, max(0, self.base_humidity + humidity_variation))
-        presure = self.base_pressure + pressure_variation
-        wind_eed = max(0, self.base_wind_speed + wind_speed_variation)
+        temperature = self.base_temperature + temp_variation
+        humidity = min(100, max(0, self.base_humidity + humidity_variation))
+        pressure = self.base_pressure + pressure_variation
+        wind_speed = max(0, self.base_wind_speed + wind_speed_variation)
         wind_direction = (self.base_wind_direction + wind_dir_variation) % 360
         precipitation = max(0, self.base_precipitation + precip_variation)
         
