@@ -8,7 +8,7 @@
     "check_interval": 60,
     "azure_sql": {
         "server": "your-server.database.windows.net",
-        "database": "IotWeatherData",
+        "database": "database_name",
         "username": "your_username",
         "password": "your_password",
         "trust_server_cert": "no"

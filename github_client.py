@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""
-GitHub Client - Handles interaction with GitHub API
-"""
 import os
 import requests
 import logging
@@ -13,7 +10,6 @@ logger = logging.getLogger("GitHub-Client")
 
 class GitHubClient:
     def __init__(self, token, owner, repo):
-        """Initialize GitHub client with token and repository information."""
         self.token = token
         self.owner = owner
         self.repo = repo
@@ -24,7 +20,6 @@ class GitHubClient:
         }
     
     def get_latest_release(self):
-        """Get the latest release from GitHub."""
         url = f"{self.api_base}/repos/{self.owner}/{self.repo}/releases/latest"
         
         try:
@@ -45,7 +40,6 @@ class GitHubClient:
             return None
     
     def get_latest_commit(self):
-        """Get the latest commit from the default branch."""
         url = f"{self.api_base}/repos/{self.owner}/{self.repo}/commits"
         
         try:
@@ -65,7 +59,6 @@ class GitHubClient:
             return None
     
     def download_release_assets(self, release_id, destination_dir):
-        """Download assets from a specific release."""
         url = f"{self.api_base}/repos/{self.owner}/{self.repo}/releases/{release_id}/assets"
         
         try:
@@ -78,14 +71,12 @@ class GitHubClient:
             assets = response.json()
             downloaded_files = []
             
-            # Create destination directory if it doesn't exist
             os.makedirs(destination_dir, exist_ok=True)
             
             for asset in assets:
                 asset_url = asset["browser_download_url"]
                 asset_name = asset["name"]
                 
-                # Download the asset
                 asset_response = requests.get(asset_url, headers=self.headers)
                 
                 if asset_response.status_code == 200:
@@ -106,12 +97,9 @@ class GitHubClient:
             return False, []
     
     def download_repository_files(self, destination_dir, app_dir="application"):
-        """Download the latest code from the repository."""
         try:
-            # Create destination directory if it doesn't exist
             os.makedirs(destination_dir, exist_ok=True)
             
-            # Get repository contents specifically for the application directory
             url = f"{self.api_base}/repos/{self.owner}/{self.repo}/contents/{app_dir}"
             
             response = requests.get(url, headers=self.headers)
@@ -123,13 +111,11 @@ class GitHubClient:
             contents = response.json()
             downloaded_files = []
             
-            # Download each Python file
             for item in contents:
                 if item["type"] == "file" and (item["name"].endswith(".py") or item["name"].endswith(".txt")):
                     file_url = item["download_url"]
                     file_name = item["name"]
                     
-                    # Download the file
                     file_response = requests.get(file_url)
                     
                     if file_response.status_code == 200:
@@ -148,7 +134,6 @@ class GitHubClient:
             return False, []
     
     def get_file_content(self, file_path):
-        """Get the content of a specific file from the repository."""
         url = f"{self.api_base}/repos/{self.owner}/{self.repo}/contents/{file_path}"
         
         try:

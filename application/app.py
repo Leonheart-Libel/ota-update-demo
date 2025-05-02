@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""
-Enhanced application that generates simulated environmental data and stores it in Azure SQL Database.
-This version adds weather metrics simulation and device tracking capabilities.
-Version 3.0.0: Added Air Quality monitoring and improved weather data visualization.
-"""
 import os
 import time
 import random
@@ -16,7 +11,6 @@ import math
 import signal
 from datetime import datetime
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -27,20 +21,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger("EnhancedWeatherApp")
 
-# App version - read from version file
 version_files = [
-    "application/version.txt",  # Path relative to project root
-    "version.txt",              # Path relative to current directory
-    "../application/version.txt"  # Another possible path
+    "application/version.txt",  
+    "version.txt",              
+    "../application/version.txt"  
 ]
 
-APP_VERSION = "3.0.0"  # Updated version number
+APP_VERSION = "1.0.0" 
 for version_file in version_files:
     try:
         if os.path.exists(version_file):
             with open(version_file, "r") as f:
                 version = f.read().strip()
-                if version:  # Only use if not empty
+                if version:  
                     APP_VERSION = version
                     logger.info(f"Loaded version {APP_VERSION} from {version_file}")
                     break
@@ -51,24 +44,16 @@ logger.info(f"Current working directory: {os.getcwd()}")
 logger.info(f"Using application version: {APP_VERSION}")
 
 class WeatherSimulator:
-    """Simulates weather patterns with realistic variations over time"""
-    
     def __init__(self):
-        # Base values for different metrics
-        self.base_temperature = random.uniform(15.0, 25.0)  # Celsius
-        self.base_humidity = random.uniform(40.0, 70.0)     # Percentage
-        self.base_pressure = random.uniform(1000.0, 1020.0) # hPa
-        self.base_wind_speed = random.uniform(5.0, 15.0)    # km/h
-        self.base_wind_direction = random.uniform(0, 360)   # Degrees
-        self.base_precipitation = random.uniform(0, 5.0)    # mm
+        self.base_temperature = random.uniform(15.0, 25.0)  
+        self.base_humidity = random.uniform(40.0, 70.0)    
+        self.base_pressure = random.uniform(1000.0, 1020.0)
+        self.base_wind_speed = random.uniform(5.0, 15.0) 
+        self.base_wind_direction = random.uniform(0, 360)
+        self.base_precipitation = random.uniform(0, 5.0)
         
-        # NEW: Add base air quality (AQI)
-        self.base_air_quality = random.uniform(30.0, 70.0)  # AQI
-        
-        # Time counters for oscillation
         self.time_counter = 0
         
-        # Possible weather conditions
         self.weather_conditions = [
             "Clear", "Partly Cloudy", "Cloudy", "Overcast", 
             "Light Rain", "Moderate Rain", "Heavy Rain",
@@ -76,41 +61,17 @@ class WeatherSimulator:
             "Foggy", "Windy"
         ]
         self.current_condition = random.choice(self.weather_conditions)
-        self.condition_duration = random.randint(5, 20)  # Duration in cycles
+        self.condition_duration = random.randint(5, 20) 
         self.condition_counter = 0
-        
-        # NEW: Air quality categories
-        self.air_quality_categories = [
-            "Good", "Moderate", "Unhealthy for Sensitive Groups", 
-            "Unhealthy", "Very Unhealthy", "Hazardous"
-        ]
-    
-    def get_air_quality_category(self, aqi):
-        """NEW: Determine air quality category based on AQI value"""
-        if aqi <= 50:
-            return self.air_quality_categories[0]  # Good
-        elif aqi <= 100:
-            return self.air_quality_categories[1]  # Moderate
-        elif aqi <= 150:
-            return self.air_quality_categories[2]  # Unhealthy for Sensitive Groups
-        elif aqi <= 200:
-            return self.air_quality_categories[3]  # Unhealthy
-        elif aqi <= 300:
-            return self.air_quality_categories[4]  # Very Unhealthy
-        else:
-            return self.air_quality_categories[5]  # Hazardous
     
     def update(self):
-        """Update weather values with realistic variations"""
         self.time_counter += 1
         self.condition_counter += 1
         
-        # Potentially change weather condition
         if self.condition_counter >= self.condition_duration:
             self.condition_counter = 0
             self.condition_duration = random.randint(5, 20)
             
-            # Weather tends to change gradually
             current_index = self.weather_conditions.index(self.current_condition)
             possible_indices = [
                 max(0, current_index - 1),
@@ -119,7 +80,6 @@ class WeatherSimulator:
             ]
             self.current_condition = self.weather_conditions[random.choice(possible_indices)]
         
-        # Calculate oscillating variations
         temp_variation = math.sin(self.time_counter / 10) * 3 + random.uniform(-1, 1)
         humidity_variation = math.sin(self.time_counter / 12) * 5 + random.uniform(-2, 2)
         pressure_variation = math.sin(self.time_counter / 15) * 2 + random.uniform(-0.5, 0.5)
@@ -127,10 +87,6 @@ class WeatherSimulator:
         wind_dir_variation = random.uniform(-10, 10)
         precip_variation = 0
         
-        # NEW: Calculate air quality variation
-        air_quality_variation = math.sin(self.time_counter / 20) * 10 + random.uniform(-5, 5)
-        
-        # Add precipitation based on condition
         if "Rain" in self.current_condition or "Snow" in self.current_condition:
             intensity = 1
             if "Light" in self.current_condition:
@@ -139,15 +95,7 @@ class WeatherSimulator:
                 intensity = 2
             
             precip_variation = random.uniform(0, 2) * intensity
-            
-            # NEW: Air quality tends to improve during precipitation (washing effect)
-            air_quality_variation -= intensity * 3
         
-        # NEW: Air quality worsens in foggy conditions
-        if "Foggy" in self.current_condition:
-            air_quality_variation += random.uniform(5, 15)
-        
-        # Update values with variations
         temperature = self.base_temperature + temp_variation
         humidity = min(100, max(0, self.base_humidity + humidity_variation))
         pressure = self.base_pressure + pressure_variation
@@ -155,11 +103,6 @@ class WeatherSimulator:
         wind_direction = (self.base_wind_direction + wind_dir_variation) % 360
         precipitation = max(0, self.base_precipitation + precip_variation)
         
-        # NEW: Calculate air quality
-        air_quality = max(0, min(300, self.base_air_quality + air_quality_variation))
-        air_quality_category = self.get_air_quality_category(air_quality)
-        
-        # Return weather data
         return {
             "temperature": round(temperature, 1),
             "humidity": round(humidity, 1),
@@ -167,46 +110,35 @@ class WeatherSimulator:
             "wind_speed": round(wind_speed, 1),
             "wind_direction": round(wind_direction, 1),
             "precipitation": round(precipitation, 2),
-            "condition": self.current_condition,
-            "air_quality": round(air_quality, 1),  # NEW
-            "air_quality_category": air_quality_category  # NEW
+            "condition": self.current_condition
         }
 
 
 class EnhancedApplication:
     def __init__(self):
-        """Initialize the enhanced application with Azure SQL connection."""
         logger.info(f"Starting Enhanced Weather Application v{APP_VERSION}")
         
-        # Load configuration
         self.load_config()
         
-        # Initialize device ID management
         self.initialize_device_id()
         
-        # Connect to Azure SQL database
         self.conn = self.create_db_connection()
         
-        # Setup database if needed
         self._ensure_tables_exist()
         
-        # Register or update device info
         self.register_device()
         
-        # Initialize weather simulator
         self.weather_simulator = WeatherSimulator()
 
-        # Add shutdown flag and signal handler
         self.shutdown_requested = False
         signal.signal(signal.SIGTERM, self.handle_termination)
+        signal.signal(signal.SIGINT, self.handle_termination)
     
     def handle_termination(self, signum, frame):
-        """Handle graceful shutdown signal"""
-        logger.info("Shutdown signal received, finishing current operation...")
+        logger.info(f"Shutdown signal {signum} received, finishing current operation...")
         self.shutdown_requested = True
     
     def initialize_device_id(self):
-        """Generate or load a unique device ID"""
         device_id_file = "data/device_id.txt"
         os.makedirs(os.path.dirname(device_id_file), exist_ok=True)
         
@@ -228,22 +160,21 @@ class EnhancedApplication:
                 logger.error(f"Error saving device ID: {str(e)}")
     
     def generate_device_id(self):
-        """Generate a unique device ID based on hostname and a UUID"""
         hostname = socket.gethostname()
         unique_id = str(uuid.uuid4())[:8]
         device_id = f"{hostname}-{unique_id}"
         return device_id
     
     def create_db_connection(self):
-        """Create a connection to Azure SQL Database"""
         try:
             conn_string = (
-                f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+                f"DRIVER={{FreeTDS}};"
                 f"SERVER={self.sql_server};"
                 f"DATABASE={self.sql_database};"
                 f"UID={self.sql_username};"
                 f"PWD={self.sql_password};"
-                f"Encrypt=yes;TrustServerCertificate={self.trust_server_cert};"
+                f"TDS_Version=8.0;"
+                f"Port=1433;"
             )
             
             conn = pyodbc.connect(conn_string)
@@ -254,11 +185,9 @@ class EnhancedApplication:
             raise
     
     def _ensure_tables_exist(self):
-        """Check if required tables exist, create them if they don't"""
         try:
             cursor = self.conn.cursor()
             
-            # Check if tables exist
             cursor.execute("""
                 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'device_info')
                 CREATE TABLE device_info (
@@ -271,13 +200,6 @@ class EnhancedApplication:
                     os_info VARCHAR(255),
                     status VARCHAR(20) DEFAULT 'active'
                 )
-            """)
-            
-            # MODIFIED: Add air_quality and air_quality_category columns to weather_data table
-            cursor.execute("""
-                IF EXISTS (SELECT * FROM sys.tables WHERE name = 'weather_data')
-                AND NOT EXISTS (SELECT * FROM sys.columns WHERE name = 'air_quality' AND object_id = OBJECT_ID('weather_data'))
-                ALTER TABLE weather_data ADD air_quality FLOAT, air_quality_category VARCHAR(50)
             """)
             
             cursor.execute("""
@@ -293,14 +215,11 @@ class EnhancedApplication:
                     wind_direction FLOAT,
                     precipitation FLOAT,
                     condition VARCHAR(50),
-                    air_quality FLOAT,
-                    air_quality_category VARCHAR(50),
                     message NVARCHAR(500),
                     version VARCHAR(20)
                 )
             """)
             
-            # Create indexes if they don't exist
             cursor.execute("""
                 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_weather_data_timestamp')
                 CREATE INDEX IX_weather_data_timestamp ON weather_data (timestamp)
@@ -323,11 +242,9 @@ class EnhancedApplication:
             raise
     
     def register_device(self):
-        """Register this device or update its information in the database"""
         try:
             cursor = self.conn.cursor()
             
-            # Get device information
             hostname = socket.gethostname()
             try:
                 ip_address = socket.gethostbyname(hostname)
@@ -338,12 +255,10 @@ class EnhancedApplication:
             os_info = f"{platform.system()} {platform.release()}"
             current_time = datetime.now()
             
-            # Check if device already exists
             cursor.execute("SELECT device_id FROM device_info WHERE device_id = ?", (self.device_id,))
             row = cursor.fetchone()
             
             if row:
-                # Update existing device
                 cursor.execute("""
                     UPDATE device_info 
                     SET hostname = ?, ip_address = ?, last_seen = ?, 
@@ -352,7 +267,6 @@ class EnhancedApplication:
                 """, (hostname, ip_address, current_time, APP_VERSION, os_info, self.device_id))
                 logger.info(f"Updated device info for {self.device_id}")
             else:
-                # Register new device
                 cursor.execute("""
                     INSERT INTO device_info 
                     (device_id, hostname, ip_address, first_seen, last_seen, current_version, os_info, status)
@@ -363,23 +277,18 @@ class EnhancedApplication:
             self.conn.commit()
         except Exception as e:
             logger.error(f"Error registering device: {str(e)}")
-            # Don't raise here to allow application to continue working even if registration fails
     
     def load_config(self):
-        """Load application configuration"""
-        # Default values for app configuration
         self.interval = 5  # Default interval
         self.enable_extended_logging = True  # Default extended logging
         self.data_retention_days = 30  # Default data retention
         
-        # Default SQL connection parameters
         self.sql_server = "your-server.database.windows.net"
         self.sql_database = "IotWeatherData"
         self.sql_username = "your_username"
         self.sql_password = "your_password"
         self.trust_server_cert = "no"
         
-        # First, try to load SQL parameters from config.json (new approach)
         config_paths = [
             "config.json",               # Path relative to project root
             "../config.json",            # Path if running from application directory
@@ -393,7 +302,6 @@ class EnhancedApplication:
                     with open(config_path, 'r') as f:
                         config = json.load(f)
                         
-                        # Get SQL parameters from config.json
                         if "azure_sql" in config:
                             sql_config = config["azure_sql"]
                             self.sql_server = sql_config.get("server", self.sql_server)
@@ -410,7 +318,6 @@ class EnhancedApplication:
                 except Exception as e:
                     logger.warning(f"Error loading config.json: {str(e)}")
         
-        # Load app-specific configuration from app_config.py (keep this for backward compatibility)
         app_config_path = "application/app_config.py"
         
         if os.path.exists(app_config_path):
@@ -435,7 +342,6 @@ class EnhancedApplication:
                         elif key == "DATA_RETENTION_DAYS":
                             self.data_retention_days = int(value)
                         
-                        # Only read SQL parameters from app_config.py if not already loaded from config.json
                         if not config_loaded:
                             if key == "SQL_SERVER":
                                 self.sql_server = value
@@ -453,26 +359,19 @@ class EnhancedApplication:
                 logger.warning(f"Error loading app_config.py: {str(e)}")
         
     def generate_data(self):
-        """Generate enhanced weather data with timestamp."""
         timestamp = datetime.now()
         
-        # Get simulated weather data
         weather_data = self.weather_simulator.update()
         
-        # MODIFIED: Generate a meaningful message based on weather + air quality
         condition = weather_data["condition"]
         temp = weather_data["temperature"]
-        air_quality = weather_data["air_quality"]
-        air_quality_category = weather_data["air_quality_category"]
         
-        # NEW: Enhanced message format with air quality
-        message = f"Current weather: {condition} at {temp}°C, Air Quality: {air_quality_category} ({air_quality})"
+        message = f"Current weather: {condition} at {temp}°C"
         if "Rain" in condition:
             message += f", precipitation: {weather_data['precipitation']}mm"
         if weather_data["wind_speed"] > 20:
             message += f", strong winds: {weather_data['wind_speed']}km/h"
         
-        # Create complete data record
         data = {
             "timestamp": timestamp,
             "weather": weather_data,
@@ -484,17 +383,15 @@ class EnhancedApplication:
         return data
     
     def store_data(self, data):
-        """Store enhanced data in Azure SQL database."""
         try:
             cursor = self.conn.cursor()
             
-            # MODIFIED: Store weather data with air quality
             weather = data["weather"]
             cursor.execute("""
                 INSERT INTO weather_data 
                 (device_id, timestamp, temperature, humidity, pressure, wind_speed, 
-                wind_direction, precipitation, condition, air_quality, air_quality_category, message, version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                wind_direction, precipitation, condition, message, version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 data["device_id"],
                 data["timestamp"],
@@ -505,13 +402,10 @@ class EnhancedApplication:
                 weather["wind_direction"],
                 weather["precipitation"],
                 weather["condition"],
-                weather.get("air_quality", 0),  # Handle older versions without air quality
-                weather.get("air_quality_category", "Unknown"),  # Handle older versions
                 data["message"],
                 data["version"]
             ))
             
-            # Update device last seen timestamp
             cursor.execute("""
                 UPDATE device_info 
                 SET last_seen = ?, current_version = ?
@@ -520,14 +414,12 @@ class EnhancedApplication:
             
             self.conn.commit()
             
-            # Clean up old data if retention period is set
             if self.data_retention_days > 0:
                 try:
                     cutoff_date = datetime.now().replace(
                         hour=0, minute=0, second=0, microsecond=0
                     )
                     
-                    # Calculate cutoff date by subtracting days
                     import datetime as dt
                     cutoff_date = cutoff_date - dt.timedelta(days=self.data_retention_days)
                     
@@ -541,17 +433,15 @@ class EnhancedApplication:
             
         except Exception as e:
             logger.error(f"Error storing data: {str(e)}")
-            # Try to reconnect and retry once
             try:
                 self.conn = self.create_db_connection()
-                # If reconnected successfully, retry the insert
                 cursor = self.conn.cursor()
                 weather = data["weather"]
                 cursor.execute("""
                     INSERT INTO weather_data 
                     (device_id, timestamp, temperature, humidity, pressure, wind_speed, 
-                    wind_direction, precipitation, condition, air_quality, air_quality_category, message, version)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    wind_direction, precipitation, condition, message, version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data["device_id"],
                     data["timestamp"],
@@ -562,8 +452,6 @@ class EnhancedApplication:
                     weather["wind_direction"],
                     weather["precipitation"],
                     weather["condition"],
-                    weather.get("air_quality", 0),
-                    weather.get("air_quality_category", "Unknown"),
                     data["message"],
                     data["version"]
                 ))
@@ -573,11 +461,10 @@ class EnhancedApplication:
                 logger.error(f"Failed to store data after reconnection attempt: {str(retry_error)}")
         
     def run(self):
-        """Modified run loop with shutdown handling"""
         logger.info(f"Enhanced Weather Application running with version {APP_VERSION}")
         
         try:
-            while not self.shutdown_requested:  # Modified exit condition
+            while not self.shutdown_requested: 
                 data = self.generate_data()
                 self.store_data(data)
                 
