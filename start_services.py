@@ -29,20 +29,12 @@ def start_services():
     os.chdir(base_dir)
     logger.info(f"Working directory set to: {os.getcwd()}")
     
+    # Create necessary directories
     for directory in ["application", "ota_service", "data", "versions"]:
         os.makedirs(directory, exist_ok=True)
     
-    logger.info("Starting Weather Application...")
-    app_process = subprocess.Popen(
-        [sys.executable, os.path.join(base_dir, "application/app.py")],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    
-    logger.info(f"Weather Application started with PID {app_process.pid}")
-    
-    time.sleep(2)
-    
+    # MODIFIED: We no longer start the Weather Application directly
+    # Let the OTA service handle it
     logger.info("Starting OTA Update Service...")
     ota_process = subprocess.Popen(
         [sys.executable, os.path.join(base_dir, "ota_service/ota_updater.py")],
@@ -52,37 +44,23 @@ def start_services():
     )
     
     logger.info(f"OTA Service started with PID {ota_process.pid}")
-    return app_process, ota_process
+    return ota_process
 
 if __name__ == "__main__":
     try:
-        app_process, ota_process = start_services()
+        ota_process = start_services()
         
-        logger.info("Services started, press Ctrl+C to stop...")
+        logger.info("OTA service started, press Ctrl+C to stop...")
         
         while True:
-            if app_process.poll() is not None:
-                logger.error("Weather application has stopped, restarting...")
-                app_process, _ = start_services()
-            
             if ota_process.poll() is not None:
                 logger.error("OTA service has stopped, restarting...")
-                _, ota_process = start_services()
+                ota_process = start_services()
             
             time.sleep(10)
     
     except KeyboardInterrupt:
         logger.info("Stopping services...")
-        
-        if app_process:
-            app_process.terminate()
-            for _ in range(5):
-                if app_process.poll() is not None:
-                    break
-                time.sleep(1)
-            
-            if app_process.poll() is None:
-                app_process.kill()
         
         if ota_process:
             ota_process.terminate()
