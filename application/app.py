@@ -181,7 +181,7 @@ class EnhancedApplication:
         
         self.initialize_device_id()
         
-        self.conn = self.create_dnnection()
+        self.conn = self.create_db_connection()
         
         self._ensure_tables_exist()
         
