@@ -44,24 +44,30 @@ logger.info(f"Current working directory: {os.getcwd()}")
 logger.info(f"Using application version: {APP_VERSION}")
 
 def ensure_single_instance():
+    """Ensure only one instance of the application is running."""
     lock_file = "/tmp/weather_app.lock"
     
     try:
+        # Try to create a lock file
         with open(lock_file, 'x') as f:
             f.write(str(os.getpid()))
         
+        # Register cleanup on exit
         import atexit
         atexit.register(lambda: os.remove(lock_file) if os.path.exists(lock_file) else None)
         return True
     except FileExistsError:
+        # Lock file exists, check if process is still running
         try:
             with open(lock_file, 'r') as f:
                 pid = int(f.read().strip())
             
+            # Check if process still exists
             os.kill(pid, 0)  # This will raise an exception if process doesn't exist
             logger.warning(f"Another instance is already running with PID {pid}")
             return False
         except (ProcessLookupError, ValueError):
+            # Process doesn't exist, we can take over
             os.remove(lock_file)
             return ensure_single_instance()
         except PermissionError:
@@ -150,10 +156,10 @@ class WeatherSimulator:
         if "Foggy" in self.current_condition:
             air_quality_variation += random.uniform(5, 15)
         
-        temperature = self.base_temperature + temp_variation
-        humidity = min(100, max(0, self.base_humidity + humidity_variation))
-        pressure = self.base_pressure + pressure_variation
-        wind_speed = max(0, self.base_wind_speed + wind_speed_variation)
+        tempature = self.base_temperature + temp_variation
+        huidity = min(100, max(0, self.base_humidity + humidity_variation))
+        presure = self.base_pressure + pressure_variation
+        wind_eed = max(0, self.base_wind_speed + wind_speed_variation)
         wind_direction = (self.base_wind_direction + wind_dir_variation) % 360
         precipitation = max(0, self.base_precipitation + precip_variation)
         
@@ -175,6 +181,7 @@ class WeatherSimulator:
 
 class EnhancedApplication:
     def __init__(self):
+        """Initialize the enhanced application with Azure SQL connection."""
         logger.info(f"Starting Enhanced Weather Application v{APP_VERSION}")
         
         self.load_config()
