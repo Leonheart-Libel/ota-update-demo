@@ -23,17 +23,17 @@ logger = logging.getLogger("EnhancedWeatherApp")
 
 version_files = [
     "application/version.txt",  
-    "version.txt",             
+    "version.txt",              
     "../application/version.txt"  
 ]
 
-APP_VERSION = "2.0.0" 
+APP_VERSION = "1.0.0" 
 for version_file in version_files:
     try:
         if os.path.exists(version_file):
             with open(version_file, "r") as f:
                 version = f.read().strip()
-                if version:
+                if version:  
                     APP_VERSION = version
                     logger.info(f"Loaded version {APP_VERSION} from {version_file}")
                     break
@@ -43,17 +43,40 @@ for version_file in version_files:
 logger.info(f"Current working directory: {os.getcwd()}")
 logger.info(f"Using application version: {APP_VERSION}")
 
+def ensure_single_instance():
+       lock_file = "/tmp/weather_app.lock"
+       
+       try:
+           with open(lock_file, 'x') as f:
+               f.write(str(os.getpid()))
+           
+           import atexit
+           atexit.register(lambda: os.remove(lock_file) if os.path.exists(lock_file) else None)
+           return True
+       except FileExistsError:
+           try:
+               with open(lock_file, 'r') as f:
+                   pid = int(f.read().strip())
+               
+               os.kill(pid, 0)
+               logger.warning(f"Another instance is already running with PID {pid}")
+               return False
+           except (ProcessLookupError, ValueError):
+               # Process doesn't exist, we can take over
+               os.remove(lock_file)
+               return ensure_single_instance()
+           except PermissionError:
+               logger.error("Cannot check existing process, insufficient permissions")
+               return False
+
 class WeatherSimulator:
-    
     def __init__(self):
-        self.base_temperature = random.uniform(15.0, 25.0) 
-        self.base_humidity = random.uniform(40.0, 70.0)   
+        self.base_temperature = random.uniform(15.0, 25.0)  
+        self.base_humidity = random.uniform(40.0, 70.0)    
         self.base_pressure = random.uniform(1000.0, 1020.0)
-        self.base_wind_speed = random.uniform(5.0, 15.0)   
-        self.base_wind_direction = random.uniform(0, 360) 
-        self.base_precipitation = random.uniform(0, 5.0)   
-        
-        self.base_air_quality = random.uniform(30.0, 70.0)
+        self.base_wind_speed = random.uniform(5.0, 15.0) 
+        self.base_wind_direction = random.uniform(0, 360)
+        self.base_precipitation = random.uniform(0, 5.0)
         
         self.time_counter = 0
         
@@ -66,25 +89,6 @@ class WeatherSimulator:
         self.current_condition = random.choice(self.weather_conditions)
         self.condition_duration = random.randint(5, 20) 
         self.condition_counter = 0
-        
-        self.air_quality_categories = [
-            "Good", "Moderate", "Unhealthy for Sensitive Groups", 
-            "Unhealthy", "Very Unhealthy", "Hazardous"
-        ]
-    
-    def get_air_quality_category(self, aqi):
-        if aqi <= 50:
-            return self.air_quality_categories[0]
-        elif aqi <= 100:
-            return self.air_quality_categories[1]
-        elif aqi <= 150:
-            return self.air_quality_categories[2]
-        elif aqi <= 200:
-            return self.air_quality_categories[3]
-        elif aqi <= 300:
-            return self.air_quality_categories[4]
-        else:
-            return self.air_quality_categories[5]
     
     def update(self):
         self.time_counter += 1
@@ -109,8 +113,6 @@ class WeatherSimulator:
         wind_dir_variation = random.uniform(-10, 10)
         precip_variation = 0
         
-        air_quality_variation = math.sin(self.time_counter / 20) * 10 + random.uniform(-5, 5)
-        
         if "Rain" in self.current_condition or "Snow" in self.current_condition:
             intensity = 1
             if "Light" in self.current_condition:
@@ -119,11 +121,6 @@ class WeatherSimulator:
                 intensity = 2
             
             precip_variation = random.uniform(0, 2) * intensity
-            
-            air_quality_variation -= intensity * 3
-        
-        if "Foggy" in self.current_condition:
-            air_quality_variation += random.uniform(5, 15)
         
         temperature = self.base_temperature + temp_variation
         humidity = min(100, max(0, self.base_humidity + humidity_variation))
@@ -132,9 +129,6 @@ class WeatherSimulator:
         wind_direction = (self.base_wind_direction + wind_dir_variation) % 360
         precipitation = max(0, self.base_precipitation + precip_variation)
         
-        air_quality = max(0, min(300, self.base_air_quality + air_quality_variation))
-        air_quality_category = self.get_air_quality_category(air_quality)
-        
         return {
             "temperature": round(temperature, 1),
             "humidity": round(humidity, 1),
@@ -142,15 +136,12 @@ class WeatherSimulator:
             "wind_speed": round(wind_speed, 1),
             "wind_direction": round(wind_direction, 1),
             "precipitation": round(precipitation, 2),
-            "condition": self.current_condition,
-            "air_quality": round(air_quality, 1),  # NEW
-            "air_quality_category": air_quality_category  # NEW
+            "condition": self.current_condition
         }
 
 
 class EnhancedApplication:
     def __init__(self):
-        """Initialize the enhanced application with Azure SQL connection."""
         logger.info(f"Starting Enhanced Weather Application v{APP_VERSION}")
         
         self.load_config()
@@ -238,12 +229,6 @@ class EnhancedApplication:
             """)
             
             cursor.execute("""
-                IF EXISTS (SELECT * FROM sys.tables WHERE name = 'weather_data')
-                AND NOT EXISTS (SELECT * FROM sys.columns WHERE name = 'air_quality' AND object_id = OBJECT_ID('weather_data'))
-                ALTER TABLE weather_data ADD air_quality FLOAT, air_quality_category VARCHAR(50)
-            """)
-            
-            cursor.execute("""
                 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'weather_data')
                 CREATE TABLE weather_data (
                     id INT IDENTITY(1,1) PRIMARY KEY,
@@ -256,8 +241,6 @@ class EnhancedApplication:
                     wind_direction FLOAT,
                     precipitation FLOAT,
                     condition VARCHAR(50),
-                    air_quality FLOAT,
-                    air_quality_category VARCHAR(50),
                     message NVARCHAR(500),
                     version VARCHAR(20)
                 )
@@ -333,9 +316,9 @@ class EnhancedApplication:
         self.trust_server_cert = "no"
         
         config_paths = [
-            "config.json",           
-            "../config.json",         
-            "../../config.json"        
+            "config.json",               # Path relative to project root
+            "../config.json",            # Path if running from application directory
+            "../../config.json"          # Another possible path
         ]
         
         config_loaded = False
@@ -408,10 +391,8 @@ class EnhancedApplication:
         
         condition = weather_data["condition"]
         temp = weather_data["temperature"]
-        air_quality = weather_data["air_quality"]
-        air_quality_category = weather_data["air_quality_category"]
         
-        message = f"Current weather: {condition} at {temp}°C, Air Quality: {air_quality_category} ({air_quality})"
+        message = f"Current weather: {condition} at {temp}°C"
         if "Rain" in condition:
             message += f", precipitation: {weather_data['precipitation']}mm"
         if weather_data["wind_speed"] > 20:
@@ -435,8 +416,8 @@ class EnhancedApplication:
             cursor.execute("""
                 INSERT INTO weather_data 
                 (device_id, timestamp, temperature, humidity, pressure, wind_speed, 
-                wind_direction, precipitation, condition, air_quality, air_quality_category, message, version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                wind_direction, precipitation, condition, message, version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 data["device_id"],
                 data["timestamp"],
@@ -447,8 +428,6 @@ class EnhancedApplication:
                 weather["wind_direction"],
                 weather["precipitation"],
                 weather["condition"],
-                weather.get("air_quality", 0), 
-                weather.get("air_quality_category", "Unknown"), 
                 data["message"],
                 data["version"]
             ))
@@ -487,8 +466,8 @@ class EnhancedApplication:
                 cursor.execute("""
                     INSERT INTO weather_data 
                     (device_id, timestamp, temperature, humidity, pressure, wind_speed, 
-                    wind_direction, precipitation, condition, air_quality, air_quality_category, message, version)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    wind_direction, precipitation, condition, message, version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data["device_id"],
                     data["timestamp"],
@@ -499,8 +478,6 @@ class EnhancedApplication:
                     weather["wind_direction"],
                     weather["precipitation"],
                     weather["condition"],
-                    weather.get("air_quality", 0),
-                    weather.get("air_quality_category", "Unknown"),
                     data["message"],
                     data["version"]
                 ))
@@ -513,7 +490,7 @@ class EnhancedApplication:
         logger.info(f"Enhanced Weather Application running with version {APP_VERSION}")
         
         try:
-            while not self.shutdown_requested:  
+            while not self.shutdown_requested: 
                 data = self.generate_data()
                 self.store_data(data)
                 
@@ -533,5 +510,8 @@ class EnhancedApplication:
             logger.info("Application stopped")
 
 if __name__ == "__main__":
-    app = EnhancedApplication()
-    app.run()
+    if ensure_single_instance():
+        app = EnhancedApplication()
+        app.run()
+    else:
+        logger.info("Exiting: Another instance is already running")
