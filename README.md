@@ -6,6 +6,7 @@ It is an Over-The-Air Update Mechanism/System, specifically designed to update a
 
 The system is designed to run in a Raspberry Pi 4 device, using Github as the Code Server/Code Manager. Below is the sequence diagram of the system to give an understanding of how it works
 <img width="2259" height="3840" alt="Untitled diagram _ Mermaid Chart-2025-07-14-100745" src="https://github.com/user-attachments/assets/c9858599-1df8-4369-ae0b-c031691a224c" />
+When the system is already running, all the user need to do to update the application is to commit a new code in the application folder. The OTA Updater will periodically check the repository for new commits, and downloads and applies the update to the application automatically.
 
 This system is pull-based, using HTTP polling mechanisms to get the data in the Github repository as opposed to other widely available OTA update systems that uses an MQTT Broker/Trigger that uses a push-based approach.
 
