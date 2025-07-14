@@ -1,0 +1,16 @@
+{
+    "github_token": "YOUR_GITHUB_TOKEN",
+    "repo_owner": "YOUR_GITHUB_USERNAME",
+    "repo_name": "ota-update-demo",
+    "app_dir": "application",
+    "versions_dir": "versions",
+    "max_versions": 5,
+    "check_interval": 60,
+    "azure_sql": {
+        "server": "your-server.database.windows.net",
+        "database": "IotWeatherData",
+        "username": "your_username",
+        "password": "your_password",
+        "trust_server_cert": "no"
+    }
+}
